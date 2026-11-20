@@ -1,0 +1,102 @@
+export type InvoiceStatus = 'unprocessed' | 'processed';
+export type BillStatus = 'pending' | 'synced' | 'failed';
+export type InvoicePaidStatus = 'paid' | 'unpaid';
+export type SettingsAccess = 'read' | 'write';
+
+export type LineItem = {
+  id: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  tax: number;
+};
+
+export type Invoice = {
+  id: string;
+  number: string;
+  franchiseId: string;
+  companyId: string;
+  invoiceDate: string;
+  dueDate: string;
+  paidStatus: InvoicePaidStatus;
+  status: InvoiceStatus;
+  source: 'QuickBooks' | 'Stripe' | 'Bank' | 'Manual';
+  stripePayoutId?: string;
+  lineItems: LineItem[];
+  royaltyPct: number;
+  feePct: number;
+  territory?: string;
+};
+
+export type Company = {
+  id: string;
+  franchiseId: string;
+  name: string;
+};
+
+export type Franchise = {
+  id: string;
+  name: string;
+  territory: string;
+  royaltyPct?: number;
+  feePct?: number;
+};
+
+export type Bill = {
+  id: string;
+  /** First (or only) source invoice. */
+  invoiceId: string;
+  /** All source invoices when several were combined into one bill. */
+  invoiceIds?: string[];
+  franchiseId: string;
+  /** First (or only) company. */
+  companyId: string;
+  /** All distinct companies when the bill combines several invoices. */
+  companyIds?: string[];
+  amount: number;
+  royalty: number;
+  fees: number;
+  gross: number;
+  status: BillStatus;
+  errorMessage?: string;
+  invoiceDate: string;
+  billDate: string;
+  payDate?: string;
+};
+
+export type FeeDefaults = {
+  royaltyPct: number;
+  feePct: number;
+};
+
+export type FeeOverride = {
+  id: string;
+  franchiseId: string;
+  territory?: string;
+  royaltyPct: number;
+  feePct: number;
+};
+
+export type AuditEntry = {
+  id: string;
+  at: string;
+  who: string;
+  scope: string;
+  before: FeeDefaults;
+  after: FeeDefaults;
+};
+
+export type UserProfile = {
+  name: string;
+  email: string;
+  role: string;
+};
+
+export type PayableBreakdown = {
+  gross: number;
+  royalty: number;
+  fees: number;
+  payable: number;
+};
+
+export type PeriodKey = '7d' | '30d' | '90d' | 'ytd' | 'all';
