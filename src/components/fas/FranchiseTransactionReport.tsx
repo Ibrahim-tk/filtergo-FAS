@@ -1,4 +1,5 @@
 import { useMemo, type ReactNode } from 'react';
+import Box from '@mui/material/Box';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import type { Franchise, Invoice } from '../../types/fas';
@@ -14,6 +15,13 @@ type Props = {
   onInvoiceClick?: (invoiceId: string) => void;
   activeInvoiceId?: string | null;
   toolbarActions?: ReactNode;
+  /** Fill the parent's height (table body scrolls). */
+  fill?: boolean;
+  title?: string;
+  /** Hide the Franchise name column (it's already in the surrounding header). */
+  hideFranchiseColumn?: boolean;
+  /** Show the total as a large, bold "Total bill" in the footer. */
+  emphasizeTotal?: boolean;
 };
 
 type TxRow = {
@@ -46,6 +54,10 @@ export function FranchiseTransactionReport({
   onInvoiceClick,
   activeInvoiceId,
   toolbarActions,
+  fill,
+  title = 'Transaction report',
+  hideFranchiseColumn,
+  emphasizeTotal,
 }: Props) {
   const rows = useMemo(() => {
     const ordered = [...invoices].sort(
@@ -78,7 +90,7 @@ export function FranchiseTransactionReport({
   const total = rows.length ? rows[rows.length - 1].balance : 0;
 
   const columns: DataColumn<TxRow>[] = [
-    { key: 'franchise', label: 'Franchise name', value: (r) => r.franchise },
+    { key: 'franchise', label: 'Franchise name', value: (r) => r.franchise, defaultVisible: !hideFranchiseColumn },
     {
       key: 'num',
       label: 'Num',
@@ -86,7 +98,7 @@ export function FranchiseTransactionReport({
       render: (r) => <Typography sx={{ fontSize: 13, fontWeight: 500, color: colors.ink700 }}>{r.num}</Typography>,
     },
     { key: 'date', label: 'Transaction date', value: (r) => r.date, render: (r) => usDate(r.date) },
-    { key: 'type', label: 'Transaction type', value: (r) => r.type },
+    { key: 'type', label: 'Transaction type', value: (r) => r.type, defaultVisible: !hideFranchiseColumn },
     {
       key: 'company',
       label: 'Company name',
@@ -99,7 +111,7 @@ export function FranchiseTransactionReport({
       value: (r) => r.description,
       render: (r) => (
         <Tooltip title={r.description} placement="top-start" enterDelay={400}>
-          <Typography sx={{ fontSize: 13, maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          <Typography sx={{ fontSize: 13, maxWidth: hideFranchiseColumn ? 110 : 240, overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {r.description}
           </Typography>
         </Tooltip>
@@ -123,7 +135,8 @@ export function FranchiseTransactionReport({
 
   return (
     <DataTable
-      title="Transaction report"
+      title={title}
+      fill={fill}
       noun={['transaction', 'transactions']}
       columns={columns}
       rows={rows}
@@ -135,6 +148,19 @@ export function FranchiseTransactionReport({
       defaultSort={{ key: 'date', dir: 'asc' }}
       footerNote={`· Total ${formatMoney(total)}`}
       toolbarActions={toolbarActions}
+      footerLeft={
+        emphasizeTotal ? (
+          <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1.5 }}>
+            <Typography sx={{ fontSize: 14, fontWeight: 600, color: colors.ink700 }}>Total bill</Typography>
+            <Typography sx={{ fontSize: 24, fontWeight: 800, color: colors.ink, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
+              {formatMoney(total)}
+            </Typography>
+            <Typography sx={{ fontSize: 12, color: colors.ink500 }}>
+              {rows.length} {rows.length === 1 ? 'line' : 'lines'}
+            </Typography>
+          </Box>
+        ) : undefined
+      }
     />
   );
 }

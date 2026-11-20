@@ -1,4 +1,5 @@
 import { Route, Routes, useLocation } from 'react-router-dom';
+import { RequireAuth } from './state/auth';
 import { AppShell } from './components/layout/AppShell';
 import { navItems } from './components/layout/navConfig';
 import { EmptyState, PageContainer } from './components/ui/blocks';
@@ -8,6 +9,7 @@ import InvoicesPage from './pages/InvoicesPage';
 import BillsPage from './pages/BillsPage';
 import ReportsPage from './pages/ReportsPage';
 import SettingsPage from './pages/SettingsPage';
+import LoginPage from './pages/LoginPage';
 
 /** Placeholder for unknown routes. */
 function ComingSoon() {
@@ -28,13 +30,14 @@ function ComingSoon() {
 export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<DashboardPage />} />
-      <Route path="/invoices" element={<InvoicesPage />} />
-      <Route path="/bills" element={<BillsPage />} />
-      <Route path="/reports" element={<ReportsPage />} />
-      <Route path="/settings" element={<SettingsPage />} />
-      <Route path="/components" element={<ComponentsPage />} />
-      <Route path="*" element={<ComingSoon />} />
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/" element={<RequireAuth><DashboardPage /></RequireAuth>} />
+      <Route path="/invoices" element={<RequireAuth><InvoicesPage /></RequireAuth>} />
+      <Route path="/bills" element={<RequireAuth><BillsPage /></RequireAuth>} />
+      <Route path="/reports" element={<RequireAuth><ReportsPage /></RequireAuth>} />
+      <Route path="/settings" element={<RequireAuth><SettingsPage /></RequireAuth>} />
+      <Route path="/components" element={<RequireAuth><ComponentsPage /></RequireAuth>} />
+      <Route path="*" element={<RequireAuth><ComingSoon /></RequireAuth>} />
     </Routes>
   );
 }

@@ -27,6 +27,8 @@ type Props = {
   companyName: (id: string) => string;
   onProcessAll: (invoiceIds: string[]) => void;
   onSyncAll: (billIds: string[]) => void;
+  /** Show only the Export menu. */
+  hideActions?: boolean;
 };
 
 const menuPaper = {
@@ -76,6 +78,7 @@ export function InvoicesPageActions({
   companyName,
   onProcessAll,
   onSyncAll,
+  hideActions,
 }: Props) {
   const [exportAnchor, setExportAnchor] = useState<HTMLElement | null>(null);
   const [actionAnchor, setActionAnchor] = useState<HTMLElement | null>(null);
@@ -172,6 +175,7 @@ export function InvoicesPageActions({
         Export
       </Button>
       </Tooltip>
+      {!hideActions && (
       <Tooltip title="Bulk process invoices or sync bills across all franchises">
       <Button
         variant="contained"
@@ -184,6 +188,7 @@ export function InvoicesPageActions({
         Actions
       </Button>
       </Tooltip>
+      )}
 
       <Menu
         anchorEl={exportAnchor}

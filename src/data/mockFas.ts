@@ -59,5 +59,5 @@ export const seedAudit: AuditEntry[] = [
 export const seedProfile: UserProfile = {
   name: 'Daniel Mercer',
   email: 'daniel.mercer@pureairfranchise.com',
-  role: 'Home Office Finance Officer',
+  role: 'Home Officer',
 };

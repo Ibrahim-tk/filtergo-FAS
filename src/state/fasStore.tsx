@@ -94,6 +94,40 @@ function renumberSeedBills(bills: Bill[], franchises: Franchise[]): Bill[] {
   return bills.map((b) => ({ ...b, id: renamed.get(b.id) ?? b.id }));
 }
 
+/**
+ * Demo data: the seed has every bill synced, which leaves the approval queues empty.
+ * Mark each franchise's most recent bills as awaiting sync (and a couple as failed)
+ * so Pending bill approvals has realistic work in it.
+ */
+function seedApprovalQueue(bills: Bill[]): Bill[] {
+  const latestPerFranchise = new Map<string, Bill[]>();
+  for (const b of [...bills].sort((a, b) => b.billDate.localeCompare(a.billDate) || b.id.localeCompare(a.id, undefined, { numeric: true }))) {
+    const list = latestPerFranchise.get(b.franchiseId) ?? [];
+    if (list.length < 2) list.push(b);
+    latestPerFranchise.set(b.franchiseId, list);
+  }
+  const pending = new Set<string>();
+  const failed = new Set<string>();
+  [...latestPerFranchise.values()].forEach((list, i) => {
+    list.forEach((b, j) => {
+      if (i < 2 && j === 1) failed.add(b.id);
+      else pending.add(b.id);
+    });
+  });
+  return bills.map((b) =>
+    failed.has(b.id)
+      ? {
+          ...b,
+          status: 'failed' as const,
+          payDate: undefined,
+          errorMessage: 'QuickBooks Online rejected the bill: vendor record for this franchise is inactive.',
+        }
+      : pending.has(b.id)
+        ? { ...b, status: 'pending' as const, payDate: undefined, errorMessage: undefined }
+        : b,
+  );
+}
+
 function nextId(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
 }
@@ -105,7 +139,7 @@ export function FasProvider({ children }: { children: ReactNode }) {
   const [invoices, setInvoices] = useState(() =>
     seedInvoices.map((inv) => ({ ...inv, number: inv.number.toUpperCase() })),
   );
-  const [bills, setBills] = useState(() => renumberSeedBills(seedBills, seedFranchises));
+  const [bills, setBills] = useState(() => seedApprovalQueue(renumberSeedBills(seedBills, seedFranchises)));
   const [feeDefaults, setFeeDefaultsState] = useState(seedFeeDefaults);
   const [feeOverrides, setFeeOverrides] = useState(seedFeeOverrides);
   const [audit, setAudit] = useState(seedAudit);

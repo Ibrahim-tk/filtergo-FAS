@@ -268,7 +268,9 @@ export function FranchiseDetailHeader({
       sx={{
         flexShrink: 0,
         px: 2.5,
-        py: 2,
+        // On wide screens the cells carry their own vertical padding so the stat
+        // dividers run the full height, meeting the header's top and bottom borders.
+        py: { xs: 2, lg: 0 },
         bgcolor: colors.paper,
         borderBottom: `1px solid ${colors.line}`,
       }}
@@ -281,11 +283,11 @@ export function FranchiseDetailHeader({
             lg: 'minmax(360px, 2.5fr) auto repeat(4, minmax(0, 1fr))',
           },
           rowGap: 2,
-          alignItems: 'center',
+          alignItems: { xs: 'center', lg: 'stretch' },
         }}
       >
         {/* 1 — widest identity column */}
-        <Box sx={{ minWidth: 0, pr: 2 }}>
+        <Box sx={{ minWidth: 0, pr: 2, py: { lg: 2 }, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
             <Typography
               sx={{ fontSize: 22, fontWeight: 700, color: colors.ink, letterSpacing: '-0.02em', lineHeight: 1.25 }}
@@ -317,7 +319,7 @@ export function FranchiseDetailHeader({
 
         {/* 2 — Fee dropdown + actions (actions behaviour TBD) */}
         <Box
-          sx={{ display: 'flex', alignItems: 'center', gap: 1, pr: { lg: 2.5 }, justifySelf: 'end', alignSelf: { lg: 'start' } }}
+          sx={{ display: 'flex', alignItems: 'center', gap: 1, pr: { lg: 2.5 }, py: { lg: 2 }, justifySelf: 'end', alignSelf: { lg: 'start' } }}
         >
           <ServiceChargesDropdown
             charges={charges}
@@ -342,6 +344,7 @@ export function FranchiseDetailHeader({
             gridColumn: { xs: '1 / -1', lg: 'span 4' },
             display: 'grid',
             gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+            '& > *': { py: { lg: 2 } },
             '& > :first-of-type': { borderLeft: { xs: 'none', lg: `1px solid ${colors.line}` }, pl: { xs: 0, lg: 1.75 } },
           }}
         >

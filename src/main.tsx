@@ -9,6 +9,7 @@ import '@fontsource/inter/600.css';
 import '@fontsource/inter/700.css';
 import { theme } from './theme';
 import { FasProvider } from './state/fasStore';
+import { AuthProvider } from './state/auth';
 import App from './App';
 
 createRoot(document.getElementById('root')!).render(
@@ -16,9 +17,11 @@ createRoot(document.getElementById('root')!).render(
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <BrowserRouter>
-        <FasProvider>
-          <App />
-        </FasProvider>
+        <AuthProvider>
+          <FasProvider>
+            <App />
+          </FasProvider>
+        </AuthProvider>
       </BrowserRouter>
     </ThemeProvider>
   </StrictMode>,

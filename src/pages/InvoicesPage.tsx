@@ -206,6 +206,7 @@ export default function InvoicesPage() {
           subtitle="Select a franchise, review invoices and bills, then process payables."
           actions={
             <InvoicesPageActions
+              hideActions
               franchises={franchises}
               invoices={invoices}
               bills={bills}

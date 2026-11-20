@@ -1,6 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
+import Drawer from '@mui/material/Drawer';
+import IconButton from '@mui/material/IconButton';
+import CloseRounded from '@mui/icons-material/CloseRounded';
 import MenuItem from '@mui/material/MenuItem';
 import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
@@ -11,7 +14,7 @@ import { WorkspaceBody, WorkspaceHeader, WorkspaceShell } from '../components/ui
 import { DataTable, isInPeriod, type DataColumn } from '../components/fas';
 import { Kpi } from '../components/fas/FranchiseDetailHeader';
 import { PeriodMenu } from '../components/fas/PeriodMenu';
-import { TrendCard } from '../components/fas/ReportVisuals';
+import { FranchiseTransactionReport } from '../components/fas/FranchiseTransactionReport';
 import { filterSelectProps } from '../components/fas/filterSelect';
 import { useFas } from '../state/fasStore';
 import type { PeriodKey } from '../types/fas';
@@ -27,6 +30,7 @@ type Row = {
   state: string;
   companies: number;
   bills: number;
+  billed: number;
   royalty: number;
   paid: number;
   outstanding: number;
@@ -47,7 +51,8 @@ function stateOf(territory: string) {
 }
 
 export default function ReportsPage() {
-  const { franchises, companies, bills } = useFas();
+  const { franchises, companies, bills, invoices, companyName } = useFas();
+  const [openFranchiseId, setOpenFranchiseId] = useState<string | null>(null);
   const [searchParams] = useSearchParams();
   const [period, setPeriod] = useState<PeriodKey>(() => {
     const p = searchParams.get('period');
@@ -75,6 +80,7 @@ export default function ReportsPage() {
           state: stateOf(fr.territory),
           companies: companies.filter((c) => c.franchiseId === fr.id).length,
           bills: frBills.length,
+          billed: frBills.reduce((s, b) => s + b.gross, 0),
           royalty: frBills.reduce((s, b) => s + b.royalty, 0),
           paid: synced.reduce((s, b) => s + b.amount, 0),
           outstanding: frBills.filter((b) => b.status !== 'synced').reduce((s, b) => s + b.amount, 0),
@@ -101,31 +107,17 @@ export default function ReportsPage() {
     () =>
       rows.reduce(
         (t, r) => ({
+          billed: t.billed + r.billed,
           royalty: t.royalty + r.royalty,
           paid: t.paid + r.paid,
           outstanding: t.outstanding + r.outstanding,
           bills: t.bills + r.bills,
           synced: t.synced + r.synced,
         }),
-        { royalty: 0, paid: 0, outstanding: 0, bills: 0, synced: 0 },
+        { billed: 0, royalty: 0, paid: 0, outstanding: 0, bills: 0, synced: 0 },
       ),
     [rows],
   );
-
-  /** Synthetic monthly trend rooted in current totals for a smooth prototype chart. */
-  const trendPoints = useMemo(() => {
-    const months = ['Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov'];
-    const baseRoyalty = Math.max(totals.royalty, 1);
-    const baseOut = Math.max(totals.outstanding, totals.royalty * 0.15, 1);
-    return months.map((label, i) => {
-      const wave = 0.72 + i * 0.06 + (i % 2 === 0 ? 0.08 : -0.04);
-      return {
-        label,
-        royalty: Math.round(baseRoyalty * wave * 100) / 100,
-        outstanding: Math.round(baseOut * (1.15 - i * 0.08) * 100) / 100,
-      };
-    });
-  }, [totals.royalty, totals.outstanding]);
 
   const stateOptions = useMemo(
     () =>
@@ -164,6 +156,13 @@ export default function ReportsPage() {
     { key: 'territory', label: 'Territory', value: (r) => r.territory },
     { key: 'companies', label: 'Companies', align: 'right', value: (r) => r.companies },
     { key: 'bills', label: 'Bills', align: 'right', value: (r) => r.bills },
+    {
+      key: 'billed',
+      label: 'Total billed',
+      align: 'right',
+      value: (r) => r.billed,
+      render: (r) => <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{formatMoney(r.billed)}</Typography>,
+    },
     { key: 'royalty', label: 'Royalty collected', align: 'right', value: (r) => r.royalty, render: (r) => formatMoney(r.royalty) },
     { key: 'paid', label: 'Bills paid', align: 'right', value: (r) => r.paid, render: (r) => formatMoney(r.paid) },
     {
@@ -185,6 +184,16 @@ export default function ReportsPage() {
 
   const filtered = rows.length !== allRows.length;
 
+  const openFranchise = franchises.find((f) => f.id === openFranchiseId);
+  const openRow = allRows.find((r) => r.id === openFranchiseId);
+  const openPaidInvoices = useMemo(
+    () =>
+      invoices.filter(
+        (i) => i.franchiseId === openFranchiseId && i.paidStatus === 'paid' && isInPeriod(i.invoiceDate, period),
+      ),
+    [invoices, openFranchiseId, period],
+  );
+
   return (
     <AppShell crumbs={[{ label: 'Reports' }]}>
       <WorkspaceShell>
@@ -195,62 +204,41 @@ export default function ReportsPage() {
         />
 
         <WorkspaceBody scroll={false}>
-          {/* Top: one graph on the left, 2×2 stats on the right */}
-          <Box
-            sx={{
-              flexShrink: 0,
-              display: 'grid',
-              gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1.5fr) minmax(0, 1fr)' },
-              borderBottom: `1px solid ${colors.line}`,
-            }}
-          >
-            <Box sx={{ borderRight: { md: `1px solid ${colors.line}` }, '& .MuiPaper-root': { py: 1.75, gap: 1 } }}>
-              <TrendCard title="Royalty vs outstanding" points={trendPoints} />
-            </Box>
+          {/* Stat row — same cells and dividers as the Dashboard */}
+          <Box sx={{ flexShrink: 0, px: 1, borderBottom: `1px solid ${colors.line}` }}>
             <Box
               sx={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                gridTemplateRows: 'repeat(2, minmax(0, 1fr))',
-                '& > *': { px: 2.5, py: 2, display: 'flex', flexDirection: 'column', justifyContent: 'center' },
-                '& > :nth-of-type(odd)': { borderRight: `1px solid ${colors.line}` },
-                '& > :nth-of-type(-n+2)': { borderBottom: `1px solid ${colors.line}` },
-                '& > * > *': { borderLeft: 'none !important', px: '0 !important' },
+                gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', md: 'repeat(4, minmax(0, 1fr))' },
+                '& > *': { borderLeft: { xs: 'none', md: `1px solid ${colors.line}` }, py: 2, px: 1.5 },
+                '& > :first-of-type': { borderLeft: 'none' },
               }}
             >
-              <Box>
-                <Kpi
-                  hint="Royalty booked on bills created in the selected period"
-                  status="Royalty collected"
-                  value={formatMoney(totals.royalty)}
-                  caption={filtered ? `${rows.length} of ${allRows.length} franchises` : 'all franchises'}
-                />
-              </Box>
-              <Box>
-                <Kpi
-                  hint="Payable on bills already synced to QuickBooks"
-                  status="Bills paid"
-                  value={formatMoney(totals.paid)}
-                  caption="payable synced"
-                />
-              </Box>
-              <Box>
-                <Kpi
-                  hint="Bills synced to QuickBooks out of all bills in the period"
-                  status="Synced"
-                  value={`${totals.synced}/${totals.bills}`}
-                  caption="bills"
-                />
-              </Box>
-              <Box>
-                <Kpi
-                  hint="Payable on bills that are pending or failed to sync"
-                  status="Outstanding"
-                  value={formatMoney(totals.outstanding)}
-                  caption="pending or failed"
-                  dot={totals.outstanding ? colors.red : undefined}
-                />
-              </Box>
+              <Kpi
+                hint="Gross amount on bills created in the selected period"
+                status="Total billed"
+                value={formatMoney(totals.billed)}
+                caption={filtered ? `${rows.length} of ${allRows.length} franchises` : `${totals.bills} bills · all franchises`}
+              />
+              <Kpi
+                hint="Royalty booked on bills created in the selected period"
+                status="Royalty collected"
+                value={formatMoney(totals.royalty)}
+                caption="royalty"
+              />
+              <Kpi
+                hint="Payable on bills already synced to QuickBooks"
+                status="Bills paid"
+                value={formatMoney(totals.paid)}
+                caption={`${totals.synced}/${totals.bills} bills synced`}
+              />
+              <Kpi
+                hint="Payable on bills that are pending or failed to sync"
+                status="Outstanding"
+                value={formatMoney(totals.outstanding)}
+                caption="pending or failed"
+                dot={totals.outstanding ? colors.red : undefined}
+              />
             </Box>
           </Box>
 
@@ -264,6 +252,8 @@ export default function ReportsPage() {
               rows={rows}
               rowKey={(r) => r.id}
               exportName="report.csv"
+              onRowClick={(r) => setOpenFranchiseId(r.id)}
+              activeKey={openFranchiseId}
               emptyText="No franchises match these filters."
               defaultSort={{ key: 'franchise', dir: 'asc' }}
               footerNote={`· Royalty ${formatMoney(totals.royalty)} · Outstanding ${formatMoney(totals.outstanding)}`}
@@ -278,6 +268,76 @@ export default function ReportsPage() {
           </Box>
         </WorkspaceBody>
       </WorkspaceShell>
+
+      <Drawer
+        anchor="right"
+        open={!!openFranchise}
+        onClose={() => setOpenFranchiseId(null)}
+        slotProps={{ backdrop: { sx: { backgroundColor: 'rgba(38, 37, 39, 0.28)' } } }}
+        PaperProps={{
+          sx: { width: { xs: '100%', md: '60vw' }, maxWidth: '100%', boxShadow: '-8px 0 24px rgba(16, 24, 40, 0.08)' },
+        }}
+      >
+        {openFranchise && openRow && (
+          <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+            <Box
+              sx={{
+                px: 2.5,
+                py: 2,
+                borderBottom: `1px solid ${colors.line}`,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                gap: 2,
+                flexShrink: 0,
+              }}
+            >
+              <Box sx={{ minWidth: 0 }}>
+                <Typography sx={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.02em' }}>{openFranchise.name}</Typography>
+                <Typography sx={{ fontSize: 13, color: colors.ink600, mt: 0.5 }}>{openFranchise.territory}</Typography>
+              </Box>
+              <Tooltip title="Close">
+                <IconButton
+                  onClick={() => setOpenFranchiseId(null)}
+                  aria-label="Close"
+                  size="small"
+                  sx={{ width: 32, height: 32, border: `1px solid ${colors.line}`, borderRadius: '6px' }}
+                >
+                  <CloseRounded fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            </Box>
+
+            <Box sx={{ flexShrink: 0, px: 1, bgcolor: colors.surfaceAlt, borderBottom: `1px solid ${colors.line}` }}>
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+                  '& > *': { borderLeft: `1px solid ${colors.line}`, py: 1.75, px: 1.5 },
+                  '& > :first-of-type': { borderLeft: 'none' },
+                }}
+              >
+                <Kpi status="Total billed" value={formatMoney(openRow.billed)} caption={`${openRow.bills} bills`} />
+                <Kpi status="Royalty collected" value={formatMoney(openRow.royalty)} caption="royalty" />
+                <Kpi status="Bills paid" value={formatMoney(openRow.paid)} caption="payable synced" />
+                <Kpi status="Outstanding" value={formatMoney(openRow.outstanding)} caption="pending or failed" />
+              </Box>
+            </Box>
+
+            <Box sx={{ flex: 1, minHeight: 0 }}>
+              <FranchiseTransactionReport
+                fill
+                title="Paid invoices"
+                hideFranchiseColumn
+                emphasizeTotal
+                franchise={openFranchise}
+                invoices={openPaidInvoices}
+                companyName={companyName}
+              />
+            </Box>
+          </Box>
+        )}
+      </Drawer>
     </AppShell>
   );
 }

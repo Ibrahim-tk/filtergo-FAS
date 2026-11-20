@@ -50,6 +50,8 @@ type Props<T> = {
   hideExport?: boolean;
   defaultSort?: { key: string; dir: 'asc' | 'desc' };
   insetX?: number;
+  /** Replaces the footer's left side (count/sort) — e.g. a prominent total. */
+  footerLeft?: ReactNode;
   /** Filter controls shown right after the search box. */
   filters?: ReactNode;
   /** Fill the parent's height; the table body scrolls with a sticky header. */
@@ -98,6 +100,7 @@ export function DataTable<T>({
   insetX = 2.5,
   filters,
   fill,
+  footerLeft,
   toolbarActions,
   hideCustomize,
   hideExport,
@@ -302,6 +305,7 @@ export function DataTable<T>({
           borderTop: fill || !filtered.length ? `1px solid ${colors.line}` : 'none',
         }}
       >
+        {footerLeft ?? (
         <Typography sx={{ fontSize: 13, color: colors.ink600 }}>
           {filtered.length.toLocaleString()} {filtered.length === 1 ? one : many}
           {footerNote && (
@@ -313,6 +317,7 @@ export function DataTable<T>({
             Sorted by {sortLabel} {sortDir === 'asc' ? '↑' : '↓'}
           </Box>
         </Typography>
+        )}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
           <Typography sx={{ fontSize: 13, color: colors.ink600 }}>Rows per page:</Typography>
           <TextField

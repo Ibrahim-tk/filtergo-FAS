@@ -1,4 +1,10 @@
 import { Fragment, useState, type ReactNode } from 'react';
+import { useNavigate } from 'react-router-dom';
+import Divider from '@mui/material/Divider';
+import ListItemIcon from '@mui/material/ListItemIcon';
+import LogoutRounded from '@mui/icons-material/LogoutRounded';
+import PersonOutlineRounded from '@mui/icons-material/PersonOutlineRounded';
+import { useAuth } from '../../state/auth';
 import Avatar from '@mui/material/Avatar';
 import Badge from '@mui/material/Badge';
 import Box from '@mui/material/Box';
@@ -33,12 +39,24 @@ type TopBarProps = {
 export function TopBar({
   icon,
   crumbs,
-  user = { name: 'Daniel Mercer', role: 'Home Office Finance Officer', avatar: defaultAvatar },
+  user = { name: 'Daniel Mercer', role: 'Home Officer', avatar: defaultAvatar },
   hasNotifications,
   actions,
-  userMenu = [{ label: 'Profile' }, { label: 'Log out' }],
+  userMenu,
 }: TopBarProps) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const navigate = useNavigate();
+  const { session, logout } = useAuth();
+  const items = userMenu ?? [
+    { label: 'Profile', onClick: () => navigate('/settings') },
+    {
+      label: 'Log out',
+      onClick: () => {
+        logout();
+        navigate('/login', { replace: true });
+      },
+    },
+  ];
 
   return (
     <Box
@@ -117,14 +135,27 @@ export function TopBar({
           anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
           transformOrigin={{ vertical: 'top', horizontal: 'right' }}
         >
-          {userMenu.map((m) => (
+          {session && (
+            <Box sx={{ px: 2, py: 1, minWidth: 220 }}>
+              <Typography sx={{ fontSize: 12, color: colors.ink600 }}>Signed in as</Typography>
+              <Typography sx={{ fontSize: 13, fontWeight: 600, color: colors.ink }} noWrap>
+                {session.email}
+              </Typography>
+            </Box>
+          )}
+          {session && <Divider sx={{ my: 0.5 }} />}
+          {items.map((m) => (
             <MenuItem
               key={m.label}
               onClick={() => {
                 setAnchor(null);
                 m.onClick?.();
               }}
+              sx={{ fontSize: 13, color: m.label === 'Log out' ? colors.red : colors.ink }}
             >
+              <ListItemIcon sx={{ minWidth: 30, color: 'inherit' }}>
+                {m.label === 'Log out' ? <LogoutRounded fontSize="small" /> : <PersonOutlineRounded fontSize="small" />}
+              </ListItemIcon>
               {m.label}
             </MenuItem>
           ))}

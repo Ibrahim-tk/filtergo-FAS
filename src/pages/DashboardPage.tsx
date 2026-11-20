@@ -126,7 +126,8 @@ export default function DashboardPage() {
 
   const paid = periodInvoices.filter((i) => i.paidStatus === 'paid').length;
   const unpaid = periodInvoices.filter((i) => i.paidStatus === 'unpaid').length;
-  const pendingApprovals = bills.filter((b) => b.status === 'pending');
+  const pendingApprovals = bills.filter((b) => b.status !== 'synced');
+  const failedCount = pendingApprovals.filter((b) => b.status === 'failed').length;
   const royaltyBookedCount = periodBills.length;
   const royaltyBookedAmount = periodBills.reduce((s, b) => s + b.royalty, 0);
 
@@ -174,7 +175,7 @@ export default function DashboardPage() {
           >
             <Kpi hint="Invoices paid in the selected period — click to view" to="/invoices?paid=paid" status="Paid" dot={colors.greenText} value={String(paid)} caption="invoices" />
             <Kpi hint="Invoices awaiting payment in the selected period — click to view" to="/invoices?paid=unpaid" status="Unpaid" dot={colors.red} value={String(unpaid)} caption="invoices" />
-            <Kpi hint="Bills created but not yet synced to QuickBooks — click to review" to="/bills?status=pending" status="Pending bill approvals" value={String(pendingApprovals.length)} caption="bills awaiting sync" />
+            <Kpi hint="Bills not yet in QuickBooks: awaiting sync or failed — click to review" to="/bills?status=pending" status="Pending bill approvals" value={String(pendingApprovals.length)} caption={failedCount ? `${pendingApprovals.length - failedCount} awaiting sync · ${failedCount} failed` : 'bills awaiting sync'} />
             <Kpi hint="Bills created in the selected period, each booking royalty — click to view" to="/bills" status="Royalty booked" value={String(royaltyBookedCount)} caption="bills" />
             <Kpi hint="Total royalty booked in the selected period — click for the report" to={`/reports?period=${period}`} status="Booked amount" value={formatMoney(royaltyBookedAmount)} caption="royalty" />
           </Box>
