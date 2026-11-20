@@ -111,6 +111,7 @@ export default function BillsPage() {
           subtitle="Track amounts owed to franchises, sync them to QuickBooks and fix failures."
           actions={
             <InvoicesPageActions
+              hideActions
               franchises={franchises}
               invoices={invoices}
               bills={bills}

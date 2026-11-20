@@ -150,6 +150,7 @@ export default function DashboardPage() {
             <>
               <PeriodMenu value={period} onChange={setPeriod} />
               <InvoicesPageActions
+                hideActions
                 franchises={franchises}
                 invoices={invoices}
                 bills={bills}
