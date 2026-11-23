@@ -13,6 +13,8 @@ import FilterListRounded from '@mui/icons-material/FilterListRounded';
 import SearchRounded from '@mui/icons-material/SearchRounded';
 import type { Bill, Franchise, Invoice } from '../../types/fas';
 import { colors, radius, shadows } from '../../theme/tokens';
+import { billInvoiceIds } from '../../utils/bills';
+import { computePayable, formatMoney, invoiceGross, round2 } from '../../utils/payable';
 
 type Props = {
   franchises: Franchise[];
@@ -20,6 +22,8 @@ type Props = {
   bills: Bill[];
   selectedId?: string;
   onSelect: (id: string) => void;
+  /** 'b' renders denser rows with a reconciliation status per franchise. */
+  variant?: 'a' | 'b';
 };
 
 /** One reconciliation status per franchise, most urgent wins. */
@@ -47,6 +51,21 @@ type FranchiseStats = {
   state: string;
   royalty: number;
   status: ReconStatus;
+  failedCount: number;
+  pendingCount: number;
+  processableCount: number;
+};
+
+/** Reconciliation position: paid invoices matched to bills, and payable still to bill. */
+type Recon = {
+  paid: number;
+  matched: number;
+  open: number;
+  left: number;
+  /** Paid invoices with no bill at all. */
+  noBill: { count: number; amount: number };
+  /** Paid invoices whose installment plan still has unbilled installments. */
+  partial: { count: number; amount: number };
 };
 
 const BTN = 32;
@@ -164,7 +183,7 @@ function CountPill({ count, noun, selected }: { count: number; noun: string; sel
   );
 }
 
-export function FranchiseTilesColumn({ franchises, invoices, bills, selectedId, onSelect }: Props) {
+export function FranchiseTilesColumn({ franchises, invoices, bills, selectedId, onSelect, variant = 'a' }: Props) {
   const [search, setSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -176,23 +195,23 @@ export function FranchiseTilesColumn({ franchises, invoices, bills, selectedId, 
   const stats = useMemo(() => {
     const acc = new Map<
       string,
-      { invoiceCount: number; billCount: number; failed: boolean; pending: boolean; processable: boolean }
+      { invoiceCount: number; billCount: number; failed: number; pending: number; processable: number }
     >();
     franchises.forEach((f) =>
-      acc.set(f.id, { invoiceCount: 0, billCount: 0, failed: false, pending: false, processable: false }),
+      acc.set(f.id, { invoiceCount: 0, billCount: 0, failed: 0, pending: 0, processable: 0 }),
     );
     for (const inv of invoices) {
       const a = acc.get(inv.franchiseId);
       if (!a) continue;
       a.invoiceCount += 1;
-      if (inv.paidStatus === 'paid' && inv.status !== 'processed') a.processable = true;
+      if (inv.paidStatus === 'paid' && inv.status !== 'processed') a.processable += 1;
     }
     for (const b of bills) {
       const a = acc.get(b.franchiseId);
       if (!a) continue;
       a.billCount += 1;
-      if (b.status === 'failed') a.failed = true;
-      if (b.status === 'pending') a.pending = true;
+      if (b.status === 'failed') a.failed += 1;
+      if (b.status === 'pending') a.pending += 1;
     }
     const map = new Map<string, FranchiseStats>();
     for (const f of franchises) {
@@ -203,12 +222,52 @@ export function FranchiseTilesColumn({ franchises, invoices, bills, selectedId, 
         state: stateOf(f.territory),
         royalty: f.royaltyPct ?? 0,
         status: a.failed ? 'failed' : a.pending ? 'awaitingSync' : a.processable ? 'readyToProcess' : 'upToDate',
+        failedCount: a.failed,
+        pendingCount: a.pending,
+        processableCount: a.processable,
       });
     }
     return map;
   }, [franchises, invoices, bills]);
 
   const allStats = useMemo(() => [...stats.values()], [stats]);
+
+  const recon = useMemo(() => {
+    const billsByInvoice = new Map<string, Bill[]>();
+    for (const b of bills) for (const id of billInvoiceIds(b)) billsByInvoice.set(id, [...(billsByInvoice.get(id) ?? []), b]);
+    const map = new Map<string, Recon>();
+    franchises.forEach((f) =>
+      map.set(f.id, {
+        paid: 0,
+        matched: 0,
+        open: 0,
+        left: 0,
+        noBill: { count: 0, amount: 0 },
+        partial: { count: 0, amount: 0 },
+      }),
+    );
+    for (const inv of invoices) {
+      const r = map.get(inv.franchiseId);
+      if (!r || inv.paidStatus !== 'paid') continue;
+      r.paid += 1;
+      const covering = billsByInvoice.get(inv.id) ?? [];
+      let left = 0;
+      if (!covering.length) {
+        left = computePayable(invoiceGross(inv), inv.royaltyPct, inv.feePct).payable;
+      } else {
+        const plan = covering.find((b) => b.installment)?.installment;
+        if (plan) left = round2(plan.planTotal.amount - covering.reduce((sum, b) => sum + b.amount, 0));
+      }
+      if (left > 0.005) {
+        r.open += 1;
+        r.left = round2(r.left + left);
+        const bucket = covering.length ? r.partial : r.noBill;
+        bucket.count += 1;
+        bucket.amount = round2(bucket.amount + left);
+      } else r.matched += 1;
+    }
+    return map;
+  }, [franchises, invoices, bills]);
   const statusCounts = useMemo(() => countBy(allStats.map((s) => s.status)), [allStats]);
   const stateCounts = useMemo(() => countBy(allStats.map((s) => s.state)), [allStats]);
   const royaltyCounts = useMemo(() => countBy(allStats.map((s) => s.royalty)), [allStats]);
@@ -500,6 +559,91 @@ export function FranchiseTilesColumn({ franchises, invoices, bills, selectedId, 
             const invoiceCount = stats.get(fr.id)?.invoiceCount ?? 0;
             const billCount = stats.get(fr.id)?.billCount ?? 0;
             const selected = selectedId === fr.id;
+            const rc = recon.get(fr.id);
+            if (variant === 'b' && rc) {
+              const done = rc.open === 0;
+              return (
+                <Box
+                  key={fr.id}
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={selected}
+                  aria-label={`${fr.name}${done ? '' : `, ${formatMoney(rc.left)} unbilled`}`}
+                  onClick={() => onSelect(fr.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      onSelect(fr.id);
+                    }
+                  }}
+                  sx={{
+                    px: 1.75,
+                    height: 48,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 1,
+                    borderBottom: `1px solid ${colors.line}`,
+                    borderLeft: selected ? `3px solid ${colors.green}` : '3px solid transparent',
+                    bgcolor: selected ? colors.greenSoft : colors.paper,
+                    transition: 'background-color 120ms ease',
+                    '&:hover': { bgcolor: selected ? colors.greenSoft : colors.surfaceAlt },
+                  }}
+                >
+                  <Tooltip title={fr.territory} placement="right" enterDelay={600}>
+                    <Typography sx={{ fontWeight: 600, fontSize: 13, color: colors.ink }} noWrap>
+                      {fr.name}
+                    </Typography>
+                  </Tooltip>
+                  {!done && (
+                    <Tooltip
+                      placement="right"
+                      title={
+                        <Box sx={{ fontSize: 12, lineHeight: 1.6 }}>
+                          <Box sx={{ fontWeight: 600, mb: 0.25 }}>Payable owed to the franchise, not billed yet</Box>
+                          {rc.noBill.count > 0 && (
+                            <Box>
+                              {rc.noBill.count} paid invoice{rc.noBill.count === 1 ? '' : 's'} with no bill: {formatMoney(rc.noBill.amount)}
+                            </Box>
+                          )}
+                          {rc.partial.count > 0 && (
+                            <Box>
+                              {rc.partial.count} with installments still to bill: {formatMoney(rc.partial.amount)}
+                            </Box>
+                          )}
+                        </Box>
+                      }
+                    >
+                      <Box
+                        component="span"
+                        sx={{
+                          display: 'inline-flex',
+                          alignItems: 'baseline',
+                          gap: 0.5,
+                          height: 22,
+                          lineHeight: '22px',
+                          px: 0.875,
+                          borderRadius: `${radius.sm}px`,
+                          bgcolor: selected ? 'rgba(45, 165, 81, 0.16)' : colors.surface,
+                          fontSize: 12,
+                          whiteSpace: 'nowrap',
+                          fontVariantNumeric: 'tabular-nums',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <Box component="span" sx={{ fontWeight: 600, color: selected ? colors.greenText : colors.ink }}>
+                          {formatMoney(rc.left)}
+                        </Box>
+                        <Box component="span" sx={{ color: selected ? colors.greenText : colors.ink600 }}>
+                          unbilled
+                        </Box>
+                      </Box>
+                    </Tooltip>
+                  )}
+                </Box>
+              );
+            }
             return (
               <Box
                 key={fr.id}

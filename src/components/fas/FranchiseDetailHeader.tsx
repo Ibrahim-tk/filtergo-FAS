@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -35,6 +35,8 @@ type Props = {
   companyNames: string[];
   invoices: Invoice[];
   bills: Bill[];
+  /** Replaces the four default stat cells (layout B). Pass four cells to keep the grid. */
+  statCells?: ReactNode;
 };
 
 function clampPct(n: number) {
@@ -48,13 +50,17 @@ export function Kpi({
   value,
   caption,
   dot,
+  icon,
   to,
   hint,
 }: {
   status: string;
   value: string;
-  caption: string;
+  /** Small line under the value; omit to show just label and value. */
+  caption?: string;
   dot?: string;
+  /** Small icon before the label (takes the place of the dot). */
+  icon?: ReactNode;
   /** When set, the whole cell is a link. */
   to?: string;
   /** Tooltip explaining the metric. */
@@ -64,7 +70,7 @@ export function Kpi({
     ? {
         component: RouterLink,
         to,
-        'aria-label': `${status}: ${value} ${caption}`,
+        'aria-label': `${status}: ${value}${caption ? ` ${caption}` : ''}`,
       }
     : {};
   const cell = (
@@ -74,7 +80,10 @@ export function Kpi({
         minWidth: 0,
         px: { xs: 1.5, md: 1.75 },
         borderLeft: `1px solid ${colors.line}`,
-        display: 'block',
+        // Without a caption, centre label + value so the cell has even top and bottom space.
+        display: caption ? 'block' : 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
         textDecoration: 'none',
         color: 'inherit',
         ...(to && {
@@ -88,10 +97,15 @@ export function Kpi({
       }}
     >
       <Typography
-        sx={{ display: 'flex', alignItems: 'center', gap: 0.75, fontSize: 12, fontWeight: 500, color: colors.ink600, lineHeight: 1.3 }}
+        sx={{ display: 'flex', alignItems: 'center', gap: icon ? 0.5 : 0.75, fontSize: 12, fontWeight: 500, color: colors.ink600, lineHeight: 1.3 }}
         noWrap
       >
-        {dot && (
+        {icon && (
+          <Box component="span" aria-hidden sx={{ display: 'inline-flex', flexShrink: 0, ml: '-1px', '& svg': { fontSize: 15 } }}>
+            {icon}
+          </Box>
+        )}
+        {!icon && dot && (
           <Box component="span" aria-hidden sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: dot, flexShrink: 0 }} />
         )}
         {status}
@@ -112,9 +126,11 @@ export function Kpi({
       >
         {value}
       </Typography>
-      <Typography sx={{ fontSize: 11, color: colors.ink500, lineHeight: 1.3, mt: 0.25 }} noWrap>
-        {caption}
-      </Typography>
+      {caption && (
+        <Typography sx={{ fontSize: 11, color: colors.ink500, lineHeight: 1.3, mt: 0.25 }} noWrap>
+          {caption}
+        </Typography>
+      )}
     </Box>
   );
   if (!hint) return cell;
@@ -257,6 +273,7 @@ export function FranchiseDetailHeader({
   companyNames,
   invoices,
   bills,
+  statCells,
 }: Props) {
   const [charges, setCharges] = useState<ServiceCharges>({
     royaltyPct: franchise.royaltyPct ?? 0,
@@ -348,10 +365,14 @@ export function FranchiseDetailHeader({
             '& > :first-of-type': { borderLeft: { xs: 'none', lg: `1px solid ${colors.line}` }, pl: { xs: 0, lg: 1.75 } },
           }}
         >
-          <Kpi hint="Invoices from this franchise that the customer has paid" status="Paid" dot={colors.greenText} value={String(kpis.paidCount)} caption="invoices" />
-          <Kpi hint="Invoices still awaiting customer payment" status="Unpaid" dot={colors.red} value={String(kpis.unpaidCount)} caption="invoices" />
-          <Kpi hint="Total gross amount across all invoices" status="Billed" value={formatMoney(kpis.billed)} caption="gross total" />
-          <Kpi hint="Invoices that already have a bill created" status="Processed" value={String(kpis.processedCount)} caption="invoices" />
+          {statCells ?? (
+            <>
+              <Kpi hint="Invoices from this franchise that the customer has paid" status="Paid" dot={colors.greenText} value={String(kpis.paidCount)} caption="invoices" />
+              <Kpi hint="Invoices still awaiting customer payment" status="Unpaid" dot={colors.red} value={String(kpis.unpaidCount)} caption="invoices" />
+              <Kpi hint="Total gross amount across all invoices" status="Billed" value={formatMoney(kpis.billed)} caption="gross total" />
+              <Kpi hint="Invoices that already have a bill created" status="Processed" value={String(kpis.processedCount)} caption="invoices" />
+            </>
+          )}
         </Box>
       </Box>
     </Box>

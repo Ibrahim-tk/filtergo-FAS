@@ -14,7 +14,7 @@ export function isCombinedBill(b: Pick<Bill, 'invoiceId' | 'invoiceIds'>): boole
   return billInvoiceIds(b).length > 1;
 }
 
-/** "DM_123456" or "DM_123456 +4" for a combined bill. */
+/** "INV_123456" or "INV_123456 +4" for a combined bill. */
 export function billInvoiceLabel(
   b: Pick<Bill, 'invoiceId' | 'invoiceIds'>,
   numberOf: (invoiceId: string) => string | undefined,

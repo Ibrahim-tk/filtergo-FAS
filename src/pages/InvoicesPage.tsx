@@ -10,6 +10,10 @@ import Tabs from '@mui/material/Tabs';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import CloseRounded from '@mui/icons-material/CloseRounded';
+import AccountBalanceOutlined from '@mui/icons-material/AccountBalanceOutlined';
+import AttachMoneyRounded from '@mui/icons-material/AttachMoneyRounded';
+import PendingActionsRounded from '@mui/icons-material/PendingActionsRounded';
+import ReceiptLongOutlined from '@mui/icons-material/ReceiptLongOutlined';
 import { AppShell } from '../components/layout/AppShell';
 import { EmptyState } from '../components/ui/blocks';
 import {
@@ -37,6 +41,12 @@ import { BillInvoiceItems, itemize } from '../components/fas/BillInvoiceItems';
 import type { Bill, PeriodKey } from '../types/fas';
 import { computePayable, formatMoney, invoiceGross } from '../utils/payable';
 import { colors } from '../theme/tokens';
+import { LayoutVariantToggle, useLayoutVariant } from '../components/layout/LayoutVariantToggle';
+import { BillLedgerTable } from '../components/fas/BillLedgerTable';
+import { Kpi } from '../components/fas/FranchiseDetailHeader';
+import { InvoiceLedgerDrawer } from '../components/fas/InvoiceLedgerDrawer';
+import { InvoiceReconTable } from '../components/fas/InvoiceReconTable';
+import { buildInvoiceGroups } from '../utils/ledger';
 
 type WorkspaceTab = 'invoices' | 'bills' | 'reports';
 
@@ -59,6 +69,7 @@ export default function InvoicesPage() {
   } = useFas();
 
   const [searchParams] = useSearchParams();
+  const [variant] = useLayoutVariant();
   const paidParam = searchParams.get('paid');
   const initialPaidFilter = paidParam === 'paid' || paidParam === 'unpaid' ? paidParam : '';
 
@@ -70,6 +81,7 @@ export default function InvoicesPage() {
   const [billSelectedIds, setBillSelectedIds] = useState<Set<string>>(new Set());
   const [drawerInvoiceId, setDrawerInvoiceId] = useState<string | null>(null);
   const [drawerBillId, setDrawerBillId] = useState<string | null>(null);
+  const [drawerGroupKey, setDrawerGroupKey] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<null | { type: 'delete' | 'resync'; bill: Bill }>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [bulkConfirm, setBulkConfirm] = useState<null | { type: 'process' | 'sync'; ids: string[] }>(null);
@@ -101,6 +113,18 @@ export default function InvoicesPage() {
     return { paidCount, unpaidCount, billed, processedCount };
   }, [franchiseInvoices]);
 
+  // Layout B header: the dashboard's bill stats, scoped to this franchise (all time).
+  const billKpis = useMemo(() => {
+    const pending = franchiseBills.filter((b) => b.status !== 'synced');
+    const failed = pending.filter((b) => b.status === 'failed').length;
+    return {
+      pendingCount: pending.length,
+      pendingCaption: failed ? `${pending.length - failed} awaiting sync · ${failed} failed` : 'bills awaiting sync',
+      royaltyCount: franchiseBills.length,
+      royaltyAmount: franchiseBills.reduce((s, b) => s + b.royalty, 0),
+    };
+  }, [franchiseBills]);
+
   const drawerInvoice = drawerInvoiceId
     ? invoices.find((i) => i.id === drawerInvoiceId)
     : undefined;
@@ -118,6 +142,15 @@ export default function InvoicesPage() {
 
   const drawerBill = drawerBillId ? bills.find((b) => b.id === drawerBillId) : undefined;
 
+  const invoiceNumberOf = (id: string) => getInvoice(id)?.number ?? id;
+  const drawerGroup = useMemo(
+    () =>
+      drawerGroupKey
+        ? buildInvoiceGroups(franchiseBills, (id) => getInvoice(id)?.number ?? id, companyName).find((g) => g.key === drawerGroupKey)
+        : undefined,
+    [drawerGroupKey, franchiseBills, getInvoice, companyName],
+  );
+
   const openRelatedBill = () => {
     if (!relatedBillForDrawer) return;
     setDrawerInvoiceId(null);
@@ -131,6 +164,7 @@ export default function InvoicesPage() {
     setBillSelectedIds(new Set());
     setDrawerInvoiceId(null);
     setDrawerBillId(null);
+    setDrawerGroupKey(null);
   };
 
   const toggleInvoiceSelect = (id: string) => {
@@ -199,7 +233,7 @@ export default function InvoicesPage() {
     tab === 'invoices' ? invoiceSelectedIds.size : tab === 'bills' ? billSelectedIds.size : 0;
 
   return (
-    <AppShell crumbs={[{ label: 'Invoices' }]}>
+    <AppShell crumbs={[{ label: 'Invoices' }]} topBarActions={<LayoutVariantToggle />}>
       <WorkspaceShell>
         <WorkspaceHeader
           title="Invoices"
@@ -244,6 +278,7 @@ export default function InvoicesPage() {
                 bills={bills}
                 selectedId={selectedFranchiseId}
                 onSelect={selectFranchise}
+                variant={variant}
               />
             </Box>
 
@@ -271,6 +306,40 @@ export default function InvoicesPage() {
                     companyNames={companies.filter((c) => c.franchiseId === selectedFranchise.id).map((c) => c.name)}
                     invoices={franchiseInvoices}
                     bills={franchiseBills}
+                    statCells={
+                      variant === 'b'
+                        ? [
+                            <Kpi
+                              key="paid"
+                              hint="Invoices from this franchise that the customer has paid"
+                              status="Paid"
+                              icon={<AttachMoneyRounded sx={{ color: colors.greenText }} />}
+                              value={String(kpis.paidCount)}
+                            />,
+                            <Kpi
+                              key="pending"
+                              hint={`Bills for this franchise not yet in QuickBooks: ${billKpis.pendingCaption}`}
+                              status="Pending bill approvals"
+                              icon={<PendingActionsRounded sx={{ color: colors.amber }} />}
+                              value={String(billKpis.pendingCount)}
+                            />,
+                            <Kpi
+                              key="royalty"
+                              hint="Bills created for this franchise, each booking royalty"
+                              status="Royalty booked"
+                              icon={<ReceiptLongOutlined sx={{ color: colors.ink600 }} />}
+                              value={String(billKpis.royaltyCount)}
+                            />,
+                            <Kpi
+                              key="amount"
+                              hint="Total royalty booked on this franchise's bills"
+                              status="Booked amount"
+                              icon={<AccountBalanceOutlined sx={{ color: colors.ink600 }} />}
+                              value={formatMoney(billKpis.royaltyAmount)}
+                            />,
+                          ]
+                        : undefined
+                    }
                     onApplyCharges={({ royaltyPct, feePct }) => {
                       upsertFeeOverride({ franchiseId: selectedFranchise.id, royaltyPct, feePct });
                       setToast(`Service charges updated for ${selectedFranchise.name}`);
@@ -291,6 +360,7 @@ export default function InvoicesPage() {
                         setTab(v);
                         setDrawerInvoiceId(null);
                         setDrawerBillId(null);
+                        setDrawerGroupKey(null);
                       }}
                       sx={{
                         minHeight: 0,
@@ -325,7 +395,22 @@ export default function InvoicesPage() {
                   </Box>
 
                   <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
-                    {tab === 'invoices' && (
+                    {tab === 'invoices' && variant === 'b' && (
+                      <InvoiceReconTable
+                        key={selectedFranchise.id}
+                        invoices={franchiseInvoices}
+                        bills={franchiseBills}
+                        franchise={selectedFranchise}
+                        companyName={companyName}
+                        selectedIds={invoiceSelectedIds}
+                        onToggleSelect={toggleInvoiceSelect}
+                        onToggleSelectAll={toggleInvoiceSelectAll}
+                        onRowClick={(id) => setDrawerInvoiceId(id)}
+                        activeId={drawerInvoiceId}
+                      />
+                    )}
+
+                    {tab === 'invoices' && variant === 'a' && (
                       <InvoiceDataTable
                         initialPaidFilter={initialPaidFilter}
                         invoices={franchiseInvoices}
@@ -338,7 +423,27 @@ export default function InvoicesPage() {
                       />
                     )}
 
-                    {tab === 'bills' && (
+                    {tab === 'bills' && variant === 'b' && (
+                      <BillLedgerTable
+                        key={selectedFranchise.id}
+                        bills={franchiseBills}
+                        invoiceNumber={invoiceNumberOf}
+                        companyName={companyName}
+                        selectedIds={billSelectedIds}
+                        onToggleSelect={toggleBillSelect}
+                        onToggleSelectAll={toggleBillSelectAll}
+                        onRowClick={(id) => setDrawerBillId(id)}
+                        onOpenGroup={(key) => setDrawerGroupKey(key)}
+                        activeId={drawerBillId}
+                        activeGroupKey={drawerGroupKey}
+                        onSyncMany={(ids) => {
+                          syncBills(ids);
+                          setToast(`Sync attempted for ${ids.length} bill${ids.length === 1 ? '' : 's'}`);
+                        }}
+                      />
+                    )}
+
+                    {tab === 'bills' && variant === 'a' && (
                       <BillDataTable
                         bills={franchiseBills}
                         invoiceNumber={(id) => getInvoice(id)?.number ?? id}
@@ -398,6 +503,24 @@ export default function InvoicesPage() {
           if (drawerInvoice) processIds([drawerInvoice.id]);
         }}
         onOpenBill={relatedBillForDrawer ? openRelatedBill : undefined}
+      />
+
+      <InvoiceLedgerDrawer
+        group={drawerGroup}
+        franchiseName={selectedFranchise?.name ?? ''}
+        getInvoice={getInvoice}
+        companyName={companyName}
+        onClose={() => setDrawerGroupKey(null)}
+        onOpenBill={(id) => setDrawerBillId(id)}
+        onOpenInvoice={(id) => {
+          setDrawerGroupKey(null);
+          setTab('invoices');
+          setDrawerInvoiceId(id);
+        }}
+        onSyncMany={(ids) => {
+          syncBills(ids);
+          setToast(`Sync attempted for ${ids.length} bill${ids.length === 1 ? '' : 's'}`);
+        }}
       />
 
       <BillDetailDrawer

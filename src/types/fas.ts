@@ -62,6 +62,17 @@ export type Bill = {
   invoiceDate: string;
   billDate: string;
   payDate?: string;
+  /** Set when the invoice is paid out over several bills (installment plan). */
+  installment?: BillInstallment;
+};
+
+export type BillInstallment = {
+  /** 1-based position in the plan. */
+  index: number;
+  /** Planned number of installments for the invoice. */
+  count: number;
+  /** Full invoice amounts the plan covers (sum of every installment, billed or not). */
+  planTotal: { gross: number; royalty: number; fees: number; amount: number };
 };
 
 export type FeeDefaults = {

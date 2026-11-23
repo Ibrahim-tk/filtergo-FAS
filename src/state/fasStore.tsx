@@ -128,6 +128,55 @@ function seedApprovalQueue(bills: Bill[]): Bill[] {
   );
 }
 
+/** Small deterministic hash so the demo installment plans are stable across reloads. */
+function hashOf(s: string) {
+  let h = 0;
+  for (let i = 0; i < s.length; i += 1) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+function addDays(iso: string, days: number) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + days));
+  return dt.toISOString().slice(0, 10);
+}
+
+/**
+ * Demo data: the source report has one bill per invoice. Split roughly a third of the
+ * larger invoices into 2–3 monthly installments so the ledger shows invoices paid out
+ * over several bills, including plans whose later installments aren't billed yet.
+ */
+function seedInstallments(bills: Bill[]): Bill[] {
+  const today = new Date().toISOString().slice(0, 10);
+  const out: Bill[] = [];
+  for (const b of bills) {
+    const h = hashOf(b.invoiceId);
+    if (b.gross < 100 || h % 3 !== 0) {
+      out.push(b);
+      continue;
+    }
+    const count = h % 2 === 0 ? 3 : 2;
+    const planTotal = { gross: b.gross, royalty: b.royalty, fees: b.fees, amount: b.amount };
+    const part = (v: number, i: number) =>
+      i < count ? round2(v / count) : round2(v - round2(v / count) * (count - 1));
+    for (let i = 1; i <= count; i += 1) {
+      const billDate = addDays(b.billDate, 30 * (i - 1));
+      if (i > 1 && billDate > today) break;
+      out.push({
+        ...b,
+        id: i === 1 ? b.id : `${b.id}-i${i}`,
+        gross: part(b.gross, i),
+        royalty: part(b.royalty, i),
+        fees: part(b.fees, i),
+        amount: part(b.amount, i),
+        billDate,
+        installment: { index: i, count, planTotal },
+      });
+    }
+  }
+  return out;
+}
+
 function nextId(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
 }
@@ -137,9 +186,10 @@ export function FasProvider({ children }: { children: ReactNode }) {
   const [companies] = useState(seedCompanies);
   // Invoice numbers are displayed (and exported) in uppercase everywhere.
   const [invoices, setInvoices] = useState(() =>
-    seedInvoices.map((inv) => ({ ...inv, number: inv.number.toUpperCase() })),
+    // Shown as INV_123456 (the anonymized source uses a dm_ prefix).
+    seedInvoices.map((inv) => ({ ...inv, number: inv.number.toUpperCase().replace(/^DM_/, 'INV_') })),
   );
-  const [bills, setBills] = useState(() => seedApprovalQueue(renumberSeedBills(seedBills, seedFranchises)));
+  const [bills, setBills] = useState(() => seedApprovalQueue(renumberSeedBills(seedInstallments(seedBills), seedFranchises)));
   const [feeDefaults, setFeeDefaultsState] = useState(seedFeeDefaults);
   const [feeOverrides, setFeeOverrides] = useState(seedFeeOverrides);
   const [audit, setAudit] = useState(seedAudit);
@@ -329,8 +379,14 @@ export function FasProvider({ children }: { children: ReactNode }) {
       const bill = bills.find((b) => b.id === billId);
       if (!bill) return;
       setBills((prev) => prev.filter((b) => b.id !== billId));
+      // An invoice stays processed while another installment bill still covers it.
+      const stillBilled = new Set(
+        bills.filter((b) => b.id !== billId).flatMap((b) => billInvoiceIds(b)),
+      );
       setInvoices((invs) =>
-        invs.map((inv) => (billInvoiceIds(bill).includes(inv.id) ? { ...inv, status: 'unprocessed' } : inv)),
+        invs.map((inv) =>
+          billInvoiceIds(bill).includes(inv.id) && !stillBilled.has(inv.id) ? { ...inv, status: 'unprocessed' } : inv,
+        ),
       );
     },
     [bills],
