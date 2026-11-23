@@ -136,7 +136,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 }
 
 function CountPill({ count, noun, selected }: { count: number; noun: string; selected?: boolean }) {
-  const t = selected ? { bg: 'rgba(45, 165, 81, 0.16)', fg: colors.ink } : { bg: colors.surface, fg: colors.ink700 };
+  const t = selected ? { bg: 'rgba(45, 165, 81, 0.16)', fg: colors.greenText } : { bg: colors.surface, fg: colors.ink700 };
   return (
     <Box
       component="span"
@@ -532,7 +532,7 @@ export function FranchiseTilesColumn({ franchises, invoices, bills, selectedId, 
                   <CountPill count={billCount} noun="bill" selected={selected} />
                 </Box>
                 <Typography sx={{ fontSize: 12, color: colors.ink600, mt: 0.25 }} noWrap>
-                  {fr.id} · {fr.territory}
+                  {fr.territory}
                 </Typography>
               </Box>
             );

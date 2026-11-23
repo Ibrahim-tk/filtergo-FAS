@@ -6,12 +6,12 @@ import { colors, radius } from '../../theme/tokens';
 export type StatusTone = 'success' | 'warning' | 'error' | 'info' | 'neutral' | 'brand';
 
 const tones: Record<StatusTone, { bg: string; fg: string }> = {
-  success: { bg: colors.greenTextSoft, fg: colors.ink800 },
+  success: { bg: colors.greenTextSoft, fg: colors.greenText },
   warning: { bg: colors.amberSoft, fg: colors.amber },
   error: { bg: colors.redSoft, fg: colors.red },
   info: { bg: colors.blueSoft, fg: colors.blue },
   neutral: { bg: colors.surface, fg: colors.ink700 },
-  brand: { bg: colors.greenSoft, fg: colors.ink800 },
+  brand: { bg: colors.greenSoft, fg: colors.greenText },
 };
 
 type Props = {

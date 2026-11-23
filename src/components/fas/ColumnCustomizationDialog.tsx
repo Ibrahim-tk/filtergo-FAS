@@ -181,7 +181,6 @@ function ColumnCustomizationBody({
                     borderBottom: `1px solid ${colors.line}`,
                     cursor: 'grab',
                     bgcolor: dragId === id ? colors.greenSoft : 'transparent',
-                    borderRadius: `${radius.sm}px`,
                   }}
                 >
                   <Typography
