@@ -25,6 +25,8 @@ export type Invoice = {
   lineItems: LineItem[];
   royaltyPct: number;
   feePct: number;
+  /** True once someone set royalty/fee on this invoice itself; franchise and global changes then skip it. */
+  feeOverride?: boolean;
   territory?: string;
 };
 

@@ -568,7 +568,7 @@ export function FranchiseTilesColumn({ franchises, invoices, bills, selectedId, 
                   role="button"
                   tabIndex={0}
                   aria-pressed={selected}
-                  aria-label={`${fr.name}${done ? '' : `, ${formatMoney(rc.left)} unbilled`}`}
+                  aria-label={`${fr.name}${done ? '' : `, ${rc.open} of ${rc.paid} paid invoices unbilled`}`}
                   onClick={() => onSelect(fr.id)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
@@ -601,7 +601,9 @@ export function FranchiseTilesColumn({ franchises, invoices, bills, selectedId, 
                       placement="right"
                       title={
                         <Box sx={{ fontSize: 12, lineHeight: 1.6 }}>
-                          <Box sx={{ fontWeight: 600, mb: 0.25 }}>Payable owed to the franchise, not billed yet</Box>
+                          <Box sx={{ fontWeight: 600, mb: 0.25 }}>
+                            {rc.open} of {rc.paid} paid invoices not fully billed · {formatMoney(rc.left)} payable
+                          </Box>
                           {rc.noBill.count > 0 && (
                             <Box>
                               {rc.noBill.count} paid invoice{rc.noBill.count === 1 ? '' : 's'} with no bill: {formatMoney(rc.noBill.amount)}
@@ -633,7 +635,7 @@ export function FranchiseTilesColumn({ franchises, invoices, bills, selectedId, 
                         }}
                       >
                         <Box component="span" sx={{ fontWeight: 600, color: selected ? colors.greenText : colors.ink }}>
-                          {formatMoney(rc.left)}
+                          {rc.open}/{rc.paid}
                         </Box>
                         <Box component="span" sx={{ color: selected ? colors.greenText : colors.ink600 }}>
                           unbilled

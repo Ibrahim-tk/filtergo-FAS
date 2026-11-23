@@ -177,12 +177,34 @@ function seedInstallments(bills: Bill[]): Bill[] {
   return out;
 }
 
+/** A franchise-level override has no territory, or the franchise's own territory. */
+function isFranchiseLevel(o: FeeOverride, franchises: Franchise[]) {
+  return !o.territory || o.territory === franchises.find((f) => f.id === o.franchiseId)?.territory;
+}
+
+/**
+ * Rate hierarchy for an invoice: invoice override (kept as-is) → territory override →
+ * franchise override → brand-wide default.
+ */
+function rateFor(
+  inv: Pick<Invoice, 'franchiseId' | 'territory'>,
+  overrides: FeeOverride[],
+  defaults: FeeDefaults,
+  franchises: Franchise[],
+): FeeDefaults {
+  const mine = overrides.filter((o) => o.franchiseId === inv.franchiseId);
+  const territory = inv.territory ? mine.find((o) => o.territory === inv.territory && !isFranchiseLevel(o, franchises)) : undefined;
+  const franchise = mine.find((o) => isFranchiseLevel(o, franchises));
+  const r = territory ?? franchise ?? defaults;
+  return { royaltyPct: r.royaltyPct, feePct: r.feePct };
+}
+
 function nextId(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
 export function FasProvider({ children }: { children: ReactNode }) {
-  const [franchises] = useState(seedFranchises);
+  const [franchises, setFranchises] = useState(seedFranchises);
   const [companies] = useState(seedCompanies);
   // Invoice numbers are displayed (and exported) in uppercase everywhere.
   const [invoices, setInvoices] = useState(() =>
@@ -221,11 +243,31 @@ export function FasProvider({ children }: { children: ReactNode }) {
     ]);
   }, [profile.name]);
 
+  // Invoice-level change: applies to this invoice only and pins it, so later franchise or
+  // brand-wide changes leave it alone. Processed (billed) invoices are locked.
   const updateInvoiceFees = useCallback((invoiceId: string, royaltyPct: number, feePct: number) => {
     setInvoices((prev) =>
-      prev.map((inv) => (inv.id === invoiceId ? { ...inv, royaltyPct, feePct } : inv)),
+      prev.map((inv) =>
+        inv.id === invoiceId && inv.status !== 'processed' ? { ...inv, royaltyPct, feePct, feeOverride: true } : inv,
+      ),
     );
   }, []);
+
+  /**
+   * Push a new rate set down the hierarchy: every franchise's shown rate, and every invoice
+   * that is not billed yet and has no invoice-level override. Bills are never touched.
+   */
+  const applyRates = useCallback(
+    (overrides: FeeOverride[], defaults: FeeDefaults) => {
+      setFranchises((prev) => prev.map((f) => ({ ...f, ...rateFor({ franchiseId: f.id }, overrides, defaults, prev) })));
+      setInvoices((prev) =>
+        prev.map((inv) =>
+          inv.status === 'processed' || inv.feeOverride ? inv : { ...inv, ...rateFor(inv, overrides, defaults, franchises) },
+        ),
+      );
+    },
+    [franchises],
+  );
 
   const processInvoices = useCallback(
     (invoiceIds: string[]) => {
@@ -397,13 +439,19 @@ export function FasProvider({ children }: { children: ReactNode }) {
     (next: FeeDefaults) => {
       pushAudit('Brand-wide defaults', feeDefaults, next);
       setFeeDefaultsState(next);
+      applyRates(feeOverrides, next);
     },
-    [feeDefaults, pushAudit],
+    [feeDefaults, feeOverrides, pushAudit, applyRates],
   );
 
   const upsertFeeOverride = useCallback(
     (override: Omit<FeeOverride, 'id'> & { id?: string }) => {
-      const existing = override.id ? feeOverrides.find((o) => o.id === override.id) : undefined;
+      // Without an id, a franchise-level change updates that franchise's existing franchise-level override.
+      const existing = override.id
+        ? feeOverrides.find((o) => o.id === override.id)
+        : !override.territory
+          ? feeOverrides.find((o) => o.franchiseId === override.franchiseId && isFranchiseLevel(o, franchises))
+          : undefined;
       const franchise = franchises.find((f) => f.id === override.franchiseId);
       const scope = `${franchise?.name ?? override.franchiseId}${override.territory ? ` / ${override.territory}` : ''}`;
       const before = existing
@@ -411,22 +459,27 @@ export function FasProvider({ children }: { children: ReactNode }) {
         : { royaltyPct: feeDefaults.royaltyPct, feePct: feeDefaults.feePct };
       pushAudit(scope, before, { royaltyPct: override.royaltyPct, feePct: override.feePct });
       const newId = existing ? existing.id : nextId('fo');
-      setFeeOverrides((prev) =>
-        existing
-          ? prev.map((o) =>
-              o.id === existing.id
-                ? { ...o, royaltyPct: override.royaltyPct, feePct: override.feePct, territory: override.territory }
-                : o,
-            )
-          : [...prev, { ...override, id: newId }],
-      );
+      const nextOverrides = existing
+        ? feeOverrides.map((o) =>
+            o.id === existing.id
+              ? { ...o, royaltyPct: override.royaltyPct, feePct: override.feePct, territory: override.territory ?? o.territory }
+              : o,
+          )
+        : [...feeOverrides, { ...override, id: newId }];
+      setFeeOverrides(nextOverrides);
+      applyRates(nextOverrides, feeDefaults);
     },
-    [feeDefaults, feeOverrides, franchises, pushAudit],
+    [feeDefaults, feeOverrides, franchises, pushAudit, applyRates],
   );
 
-  const removeFeeOverride = useCallback((id: string) => {
-    setFeeOverrides((prev) => prev.filter((o) => o.id !== id));
-  }, []);
+  const removeFeeOverride = useCallback(
+    (id: string) => {
+      const nextOverrides = feeOverrides.filter((o) => o.id !== id);
+      setFeeOverrides(nextOverrides);
+      applyRates(nextOverrides, feeDefaults);
+    },
+    [feeOverrides, feeDefaults, applyRates],
+  );
 
   const value = useMemo<FasContextValue>(
     () => ({

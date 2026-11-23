@@ -11,7 +11,7 @@ import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import CloseRounded from '@mui/icons-material/CloseRounded';
 import AccountBalanceOutlined from '@mui/icons-material/AccountBalanceOutlined';
-import AttachMoneyRounded from '@mui/icons-material/AttachMoneyRounded';
+import PaidOutlined from '@mui/icons-material/PaidOutlined';
 import PendingActionsRounded from '@mui/icons-material/PendingActionsRounded';
 import ReceiptLongOutlined from '@mui/icons-material/ReceiptLongOutlined';
 import { AppShell } from '../components/layout/AppShell';
@@ -313,7 +313,7 @@ export default function InvoicesPage() {
                               key="paid"
                               hint="Invoices from this franchise that the customer has paid"
                               status="Paid"
-                              icon={<AttachMoneyRounded sx={{ color: colors.greenText }} />}
+                              icon={<PaidOutlined sx={{ color: colors.greenText }} />}
                               value={String(kpis.paidCount)}
                             />,
                             <Kpi
