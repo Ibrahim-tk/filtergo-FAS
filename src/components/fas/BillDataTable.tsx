@@ -345,7 +345,7 @@ export function BillDataTable({
           </Tooltip>
         )}
         {showFilters && (
-          <Tooltip title="Filter by QuickBooks sync status" placement="top">
+          <Tooltip title="Sync status" placement="top">
             <TextField
               select
               size="small"
@@ -366,7 +366,7 @@ export function BillDataTable({
 
         <Box sx={{ flex: 1 }} />
 
-        <Tooltip title={showFilters ? 'Hide the filter dropdowns' : 'Show the filter dropdowns'}>
+        <Tooltip title={showFilters ? 'Hide filters' : 'Show filters'}>
           <Button
             variant="outlined"
             color="secondary"
@@ -377,7 +377,7 @@ export function BillDataTable({
             {showFilters ? 'Hide Filters' : 'Show Filters'}
           </Button>
         </Tooltip>
-        <Tooltip title={`Sorted by ${columns.find((c) => c.id === sortKey)?.label ?? sortKey} (${sortDir === 'asc' ? 'ascending' : 'descending'}). Click to change.`}>
+        <Tooltip title={`Sort: ${columns.find((c) => c.id === sortKey)?.label ?? sortKey}`}>
           <Button
             variant="outlined"
             color="secondary"
@@ -388,7 +388,7 @@ export function BillDataTable({
             Sort
           </Button>
         </Tooltip>
-        <Tooltip title="Show, hide or reorder columns">
+        <Tooltip title="Columns">
           <Button
             variant="outlined"
             color="secondary"
@@ -399,7 +399,7 @@ export function BillDataTable({
             Customize
           </Button>
         </Tooltip>
-        <Tooltip title="Download the bills in this view as CSV">
+        <Tooltip title="Export CSV">
           <Button
             variant="outlined"
             color="secondary"

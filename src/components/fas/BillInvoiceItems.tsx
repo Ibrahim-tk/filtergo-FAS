@@ -34,7 +34,7 @@ export function itemize(invoices: Invoice[]) {
     .sort((a, b) => a.invoiceDate.localeCompare(b.invoiceDate) || a.number.localeCompare(b.number))
     .map((inv) => {
       const gross = invoiceGross(inv);
-      return { inv, ...computePayable(gross, inv.royaltyPct, inv.feePct), gross };
+      return { inv, ...computePayable(gross, inv.royaltyPct, inv.feePct, inv.serviceFeePct), gross };
     });
   const totals = rows.reduce(
     (t, r) => ({

@@ -23,7 +23,7 @@ type Props = {
   selectedId?: string;
   onSelect: (id: string) => void;
   /** 'b' renders denser rows with a reconciliation status per franchise. */
-  variant?: 'a' | 'b';
+  variant?: 'a' | 'b' | 'c';
 };
 
 /** One reconciliation status per franchise, most urgent wins. */
@@ -66,6 +66,9 @@ type Recon = {
   noBill: { count: number; amount: number };
   /** Paid invoices whose installment plan still has unbilled installments. */
   partial: { count: number; amount: number };
+  /** Billed invoices (bill groups) and how many the franchise hasn't been paid for yet. */
+  billedGroups: number;
+  unpaid: { count: number; amount: number };
 };
 
 const BTN = 32;
@@ -184,6 +187,9 @@ function CountPill({ count, noun, selected }: { count: number; noun: string; sel
 }
 
 export function FranchiseTilesColumn({ franchises, invoices, bills, selectedId, onSelect, variant = 'a' }: Props) {
+  // Layout C: #FAFAFA column with 32px side gutters.
+  const tinted = variant === 'c';
+  const colBg = tinted ? colors.rowHover : colors.paper;
   const [search, setSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -244,8 +250,25 @@ export function FranchiseTilesColumn({ franchises, invoices, bills, selectedId, 
         left: 0,
         noBill: { count: 0, amount: 0 },
         partial: { count: 0, amount: 0 },
+        billedGroups: 0,
+        unpaid: { count: 0, amount: 0 },
       }),
     );
+    const groups = new Map<string, Bill[]>();
+    for (const b of bills) {
+      const key = billInvoiceIds(b).join('|');
+      groups.set(key, [...(groups.get(key) ?? []), b]);
+    }
+    for (const list of groups.values()) {
+      const r = map.get(list[0].franchiseId);
+      if (!r) continue;
+      r.billedGroups += 1;
+      const owed = list.filter((b) => !b.paidOn);
+      if (owed.length) {
+        r.unpaid.count += 1;
+        r.unpaid.amount = round2(r.unpaid.amount + owed.reduce((sum, b) => sum + b.amount, 0));
+      }
+    }
     for (const inv of invoices) {
       const r = map.get(inv.franchiseId);
       if (!r || inv.paidStatus !== 'paid') continue;
@@ -253,7 +276,7 @@ export function FranchiseTilesColumn({ franchises, invoices, bills, selectedId, 
       const covering = billsByInvoice.get(inv.id) ?? [];
       let left = 0;
       if (!covering.length) {
-        left = computePayable(invoiceGross(inv), inv.royaltyPct, inv.feePct).payable;
+        left = computePayable(invoiceGross(inv), inv.royaltyPct, inv.feePct, inv.serviceFeePct).payable;
       } else {
         const plan = covering.find((b) => b.installment)?.installment;
         if (plan) left = round2(plan.planTotal.amount - covering.reduce((sum, b) => sum + b.amount, 0));
@@ -306,15 +329,15 @@ export function FranchiseTilesColumn({ franchises, invoices, bills, selectedId, 
   };
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, bgcolor: colors.paper }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, bgcolor: colBg }}>
       {/* Title row: title · search icon (expands) · filters */}
       <Box
         sx={{
-          px: 1.5,
+          px: tinted ? 4 : 1.5,
           py: 1.25,
           borderBottom: `1px solid ${colors.line}`,
           flexShrink: 0,
-          bgcolor: colors.surfaceAlt,
+          bgcolor: tinted ? colBg : colors.surfaceAlt,
         }}
       >
         <Box sx={{ position: 'relative', height: BTN, display: 'flex', alignItems: 'center' }}>
@@ -560,15 +583,15 @@ export function FranchiseTilesColumn({ franchises, invoices, bills, selectedId, 
             const billCount = stats.get(fr.id)?.billCount ?? 0;
             const selected = selectedId === fr.id;
             const rc = recon.get(fr.id);
-            if (variant === 'b' && rc) {
-              const done = rc.open === 0;
+            if (variant !== 'a' && rc) {
+              const done = rc.unpaid.count === 0;
               return (
                 <Box
                   key={fr.id}
                   role="button"
                   tabIndex={0}
                   aria-pressed={selected}
-                  aria-label={`${fr.name}${done ? '' : `, ${rc.open} of ${rc.paid} paid invoices unbilled`}`}
+                  aria-label={`${fr.name}${done ? '' : `, ${rc.unpaid.count} of ${rc.billedGroups} billed invoices unpaid`}`}
                   onClick={() => onSelect(fr.id)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
@@ -577,18 +600,19 @@ export function FranchiseTilesColumn({ franchises, invoices, bills, selectedId, 
                     }
                   }}
                   sx={{
-                    px: 1.75,
+                    pl: tinted ? '29px' : 1.75,
+                    pr: tinted ? 4 : 1.75,
                     height: 48,
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'space-between',
+                    justifyContent: tinted ? 'flex-start' : 'space-between',
                     gap: 1,
                     borderBottom: `1px solid ${colors.line}`,
                     borderLeft: selected ? `3px solid ${colors.green}` : '3px solid transparent',
-                    bgcolor: selected ? colors.greenSoft : colors.paper,
+                    bgcolor: selected ? colors.greenSoft : colBg,
                     transition: 'background-color 120ms ease',
-                    '&:hover': { bgcolor: selected ? colors.greenSoft : colors.surfaceAlt },
+                    '&:hover': { bgcolor: selected ? colors.greenSoft : tinted ? colors.surface : colors.rowHover },
                   }}
                 >
                   <Tooltip title={fr.territory} placement="right" enterDelay={600}>
@@ -596,25 +620,41 @@ export function FranchiseTilesColumn({ franchises, invoices, bills, selectedId, 
                       {fr.name}
                     </Typography>
                   </Tooltip>
-                  {!done && (
+                  {/* Layout C: plain "· 24/135 unpaid" right after the name, no pill. */}
+                  {!done && tinted && (
+                    <Tooltip placement="right" title={`${formatMoney(rc.unpaid.amount)} unpaid`}>
+                      <Box
+                        component="span"
+                        sx={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 1,
+                          minWidth: 0,
+                          fontSize: 12,
+                          whiteSpace: 'nowrap',
+                          fontVariantNumeric: 'tabular-nums',
+                          color: selected ? colors.greenText : colors.ink500,
+                        }}
+                      >
+                        <Box
+                          component="span"
+                          aria-hidden
+                          sx={{ width: 4, height: 4, borderRadius: '50%', bgcolor: 'currentColor', opacity: 0.6, flexShrink: 0 }}
+                        />
+                        <span>
+                          <Box component="span" sx={{ fontWeight: 600 }}>
+                            {rc.unpaid.count}/{rc.billedGroups}
+                          </Box>{' '}
+                          unpaid
+                        </span>
+                      </Box>
+                    </Tooltip>
+                  )}
+                  {!done && !tinted && (
                     <Tooltip
                       placement="right"
                       title={
-                        <Box sx={{ fontSize: 12, lineHeight: 1.6 }}>
-                          <Box sx={{ fontWeight: 600, mb: 0.25 }}>
-                            {rc.open} of {rc.paid} paid invoices not fully billed · {formatMoney(rc.left)} payable
-                          </Box>
-                          {rc.noBill.count > 0 && (
-                            <Box>
-                              {rc.noBill.count} paid invoice{rc.noBill.count === 1 ? '' : 's'} with no bill: {formatMoney(rc.noBill.amount)}
-                            </Box>
-                          )}
-                          {rc.partial.count > 0 && (
-                            <Box>
-                              {rc.partial.count} with installments still to bill: {formatMoney(rc.partial.amount)}
-                            </Box>
-                          )}
-                        </Box>
+                        `${formatMoney(rc.unpaid.amount)} unpaid`
                       }
                     >
                       <Box
@@ -634,11 +674,11 @@ export function FranchiseTilesColumn({ franchises, invoices, bills, selectedId, 
                           flexShrink: 0,
                         }}
                       >
-                        <Box component="span" sx={{ fontWeight: 600, color: selected ? colors.greenText : colors.ink }}>
-                          {rc.open}/{rc.paid}
+                        <Box component="span" sx={{ fontWeight: 600, color: selected ? colors.greenText : colors.ink600 }}>
+                          {rc.unpaid.count}/{rc.billedGroups}
                         </Box>
                         <Box component="span" sx={{ color: selected ? colors.greenText : colors.ink600 }}>
-                          unbilled
+                          unpaid
                         </Box>
                       </Box>
                     </Tooltip>
@@ -667,7 +707,7 @@ export function FranchiseTilesColumn({ franchises, invoices, bills, selectedId, 
                   borderLeft: selected ? `3px solid ${colors.green}` : '3px solid transparent',
                   bgcolor: selected ? colors.greenSoft : colors.paper,
                   transition: 'background-color 120ms ease',
-                  '&:hover': { bgcolor: selected ? colors.greenSoft : colors.surfaceAlt },
+                  '&:hover': { bgcolor: selected ? colors.greenSoft : colors.rowHover },
                 }}
               >
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0 }}>

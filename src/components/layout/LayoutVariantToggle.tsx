@@ -5,17 +5,19 @@ import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import { colors, radius } from '../../theme/tokens';
 
-export type LayoutVariant = 'a' | 'b';
+export type LayoutVariant = 'a' | 'b' | 'c';
 
 const OPTIONS: { value: LayoutVariant; label: string; hint: string }[] = [
-  { value: 'a', label: 'A', hint: 'Layout A: current flat table' },
-  { value: 'b', label: 'B', hint: 'Layout B: ledger grouped by invoice' },
+  { value: 'a', label: 'A', hint: 'Layout A' },
+  { value: 'b', label: 'B', hint: 'Layout B' },
+  { value: 'c', label: 'C', hint: 'Layout C' },
 ];
 
 /** A/B layout preference, kept in the URL (?layout=b) so a reload or a shared link keeps it. */
 export function useLayoutVariant(): [LayoutVariant, (v: LayoutVariant) => void] {
   const [params, setParams] = useSearchParams();
-  const variant: LayoutVariant = params.get('layout') === 'b' ? 'b' : 'a';
+  const raw = params.get('layout');
+  const variant: LayoutVariant = raw === 'b' || raw === 'c' ? raw : 'a';
   const setVariant = (v: LayoutVariant) =>
     setParams(
       (prev) => {

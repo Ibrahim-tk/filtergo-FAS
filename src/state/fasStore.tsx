@@ -44,12 +44,13 @@ type FasState = {
 };
 
 type FasActions = {
-  updateInvoiceFees: (invoiceId: string, royaltyPct: number, feePct: number) => void;
   processInvoices: (invoiceIds: string[]) => { created: number; skipped: number };
   /** One bill per franchise for all selected invoices, summing royalty, fees and payable. */
   processInvoicesCombined: (invoiceIds: string[]) => { created: number; billIds: string[]; included: number; skipped: number };
   syncBills: (billIds: string[]) => void;
   resyncBill: (billId: string) => void;
+  /** Records that the franchise has been paid for these bills (set per invoice, never per bill). */
+  markBillsPaid: (billIds: string[]) => void;
   deleteBill: (billId: string) => void;
   setFeeDefaults: (next: FeeDefaults) => void;
   upsertFeeOverride: (override: Omit<FeeOverride, 'id'> & { id?: string }) => void;
@@ -128,6 +129,57 @@ function seedApprovalQueue(bills: Bill[]): Bill[] {
   );
 }
 
+/**
+ * Demo data: invoices that are fully billed and synced more than three weeks ago have been
+ * paid out to the franchise. Paid status is per invoice, so every bill in the group shares it.
+ */
+function seedPaidOut(bills: Bill[]): Bill[] {
+  const today = new Date().toISOString().slice(0, 10);
+  const cutoff = addDays(today, -21);
+  const groups = new Map<string, Bill[]>();
+  for (const b of bills) {
+    const key = billInvoiceIds(b).join('|');
+    groups.set(key, [...(groups.get(key) ?? []), b]);
+  }
+  const paid = new Map<string, string>();
+  for (const list of groups.values()) {
+    const planned = list.find((b) => b.installment)?.installment?.count ?? 1;
+    const last = list.map((b) => b.billDate).sort().at(-1)!;
+    if (list.length < planned || list.some((b) => b.status !== 'synced') || last > cutoff) continue;
+    // Paid out roughly three weeks after the last bill, never in the future.
+    const paidOn = addDays(last, 24) < today ? addDays(last, 24) : addDays(today, -1);
+    list.forEach((b) => paid.set(b.id, paidOn));
+  }
+  return bills.map((b) => (paid.has(b.id) ? { ...b, paidOn: paid.get(b.id) } : b));
+}
+
+/**
+ * Demo data: the anonymized report ends on a fixed date. Shift every seed date forward so the
+ * newest invoice lands yesterday, keeping "this week" figures and paid-out dates current.
+ */
+const SEED_SHIFT_DAYS = (() => {
+  const latest = seedInvoices.reduce((m, i) => (i.invoiceDate > m ? i.invoiceDate : m), '');
+  if (!latest) return 0;
+  const [y, m, d] = latest.split('-').map(Number);
+  const now = new Date();
+  const days = Math.round((Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) - Date.UTC(y, m - 1, d)) / 86400000) - 1;
+  return Math.max(0, days);
+})();
+
+function shiftInvoice(inv: Invoice): Invoice {
+  return SEED_SHIFT_DAYS ? { ...inv, invoiceDate: addDays(inv.invoiceDate, SEED_SHIFT_DAYS), dueDate: addDays(inv.dueDate, SEED_SHIFT_DAYS) } : inv;
+}
+
+function shiftBill(b: Bill): Bill {
+  if (!SEED_SHIFT_DAYS) return b;
+  return {
+    ...b,
+    invoiceDate: addDays(b.invoiceDate, SEED_SHIFT_DAYS),
+    billDate: addDays(b.billDate, SEED_SHIFT_DAYS),
+    ...(b.payDate && { payDate: addDays(b.payDate, SEED_SHIFT_DAYS) }),
+  };
+}
+
 /** Small deterministic hash so the demo installment plans are stable across reloads. */
 function hashOf(s: string) {
   let h = 0;
@@ -142,7 +194,7 @@ function addDays(iso: string, days: number) {
 }
 
 /**
- * Demo data: the source report has one bill per invoice. Split roughly a third of the
+ * Demo data: the source report has one bill per invoice. Split roughly one in four of the
  * larger invoices into 2–3 monthly installments so the ledger shows invoices paid out
  * over several bills, including plans whose later installments aren't billed yet.
  */
@@ -151,7 +203,7 @@ function seedInstallments(bills: Bill[]): Bill[] {
   const out: Bill[] = [];
   for (const b of bills) {
     const h = hashOf(b.invoiceId);
-    if (b.gross < 100 || h % 3 !== 0) {
+    if (b.gross < 40 || h % 4 !== 0) {
       out.push(b);
       continue;
     }
@@ -177,13 +229,50 @@ function seedInstallments(bills: Bill[]): Bill[] {
   return out;
 }
 
+/**
+ * Demo data: every source bill covers one invoice. Combine a few neighbouring single bills of
+ * the same franchise into one bill over 2–3 invoices, so the ledger has bills shared by invoices.
+ */
+function seedCombined(bills: Bill[]): Bill[] {
+  const byFranchise = new Map<string, Bill[]>();
+  for (const b of bills) if (!b.installment) byFranchise.set(b.franchiseId, [...(byFranchise.get(b.franchiseId) ?? []), b]);
+  const merged = new Map<string, Bill>(); // first bill id -> combined bill
+  const absorbed = new Set<string>();
+  for (const list of byFranchise.values()) {
+    const sorted = [...list].sort((a, b) => a.billDate.localeCompare(b.billDate) || a.id.localeCompare(b.id));
+    for (let i = 0; i < sorted.length; i += 1) {
+      const h = hashOf(sorted[i].invoiceId);
+      if (h % 9 !== 0) continue;
+      const size = h % 2 === 0 ? 3 : 2;
+      const part = sorted.slice(i, i + size);
+      if (part.length < size) break;
+      const last = part[part.length - 1];
+      const companyIds = [...new Set(part.map((b) => b.companyId))];
+      merged.set(part[0].id, {
+        ...part[0],
+        invoiceIds: part.map((b) => b.invoiceId),
+        companyIds,
+        gross: round2(part.reduce((t, b) => t + b.gross, 0)),
+        royalty: round2(part.reduce((t, b) => t + b.royalty, 0)),
+        fees: round2(part.reduce((t, b) => t + b.fees, 0)),
+        amount: round2(part.reduce((t, b) => t + b.amount, 0)),
+        billDate: last.billDate,
+        payDate: last.payDate,
+      });
+      part.slice(1).forEach((b) => absorbed.add(b.id));
+      i += size - 1;
+    }
+  }
+  return bills.filter((b) => !absorbed.has(b.id)).map((b) => merged.get(b.id) ?? b);
+}
+
 /** A franchise-level override has no territory, or the franchise's own territory. */
 function isFranchiseLevel(o: FeeOverride, franchises: Franchise[]) {
   return !o.territory || o.territory === franchises.find((f) => f.id === o.franchiseId)?.territory;
 }
 
 /**
- * Rate hierarchy for an invoice: invoice override (kept as-is) → territory override →
+ * Rate hierarchy for an invoice: territory override →
  * franchise override → brand-wide default.
  */
 function rateFor(
@@ -196,7 +285,7 @@ function rateFor(
   const territory = inv.territory ? mine.find((o) => o.territory === inv.territory && !isFranchiseLevel(o, franchises)) : undefined;
   const franchise = mine.find((o) => isFranchiseLevel(o, franchises));
   const r = territory ?? franchise ?? defaults;
-  return { royaltyPct: r.royaltyPct, feePct: r.feePct };
+  return { royaltyPct: r.royaltyPct, feePct: r.feePct, serviceFeePct: r.serviceFeePct ?? 0 };
 }
 
 function nextId(prefix: string) {
@@ -209,9 +298,9 @@ export function FasProvider({ children }: { children: ReactNode }) {
   // Invoice numbers are displayed (and exported) in uppercase everywhere.
   const [invoices, setInvoices] = useState(() =>
     // Shown as INV_123456 (the anonymized source uses a dm_ prefix).
-    seedInvoices.map((inv) => ({ ...inv, number: inv.number.toUpperCase().replace(/^DM_/, 'INV_') })),
+    seedInvoices.map(shiftInvoice).map((inv) => ({ ...inv, number: inv.number.toUpperCase().replace(/^DM_/, 'INV_') })),
   );
-  const [bills, setBills] = useState(() => seedApprovalQueue(renumberSeedBills(seedInstallments(seedBills), seedFranchises)));
+  const [bills, setBills] = useState(() => seedPaidOut(seedApprovalQueue(renumberSeedBills(seedCombined(seedInstallments(seedBills.map(shiftBill))), seedFranchises))));
   const [feeDefaults, setFeeDefaultsState] = useState(seedFeeDefaults);
   const [feeOverrides, setFeeOverrides] = useState(seedFeeOverrides);
   const [audit, setAudit] = useState(seedAudit);
@@ -243,26 +332,16 @@ export function FasProvider({ children }: { children: ReactNode }) {
     ]);
   }, [profile.name]);
 
-  // Invoice-level change: applies to this invoice only and pins it, so later franchise or
-  // brand-wide changes leave it alone. Processed (billed) invoices are locked.
-  const updateInvoiceFees = useCallback((invoiceId: string, royaltyPct: number, feePct: number) => {
-    setInvoices((prev) =>
-      prev.map((inv) =>
-        inv.id === invoiceId && inv.status !== 'processed' ? { ...inv, royaltyPct, feePct, feeOverride: true } : inv,
-      ),
-    );
-  }, []);
-
   /**
    * Push a new rate set down the hierarchy: every franchise's shown rate, and every invoice
-   * that is not billed yet and has no invoice-level override. Bills are never touched.
+   * that is not billed yet. Invoices can't be edited one by one. Bills are never touched.
    */
   const applyRates = useCallback(
     (overrides: FeeOverride[], defaults: FeeDefaults) => {
       setFranchises((prev) => prev.map((f) => ({ ...f, ...rateFor({ franchiseId: f.id }, overrides, defaults, prev) })));
       setInvoices((prev) =>
         prev.map((inv) =>
-          inv.status === 'processed' || inv.feeOverride ? inv : { ...inv, ...rateFor(inv, overrides, defaults, franchises) },
+          inv.status === 'processed' ? inv : { ...inv, ...rateFor(inv, overrides, defaults, franchises) },
         ),
       );
     },
@@ -291,7 +370,7 @@ export function FasProvider({ children }: { children: ReactNode }) {
           continue;
         }
         const gross = invoiceGross(inv);
-        const { royalty, fees, payable } = computePayable(gross, inv.royaltyPct, inv.feePct);
+        const { royalty, fees, service, payable } = computePayable(gross, inv.royaltyPct, inv.feePct, inv.serviceFeePct);
         const seq = (nextSeq.get(inv.franchiseId) ?? 0) + 1;
         nextSeq.set(inv.franchiseId, seq);
         newBills.push({
@@ -302,6 +381,7 @@ export function FasProvider({ children }: { children: ReactNode }) {
           amount: payable,
           royalty,
           fees,
+          ...(service > 0 && { service }),
           gross,
           status: 'pending',
           invoiceDate: inv.invoiceDate,
@@ -343,13 +423,15 @@ export function FasProvider({ children }: { children: ReactNode }) {
         let gross = 0;
         let royalty = 0;
         let fees = 0;
+        let service = 0;
         let payable = 0;
         for (const inv of sorted) {
           const g = invoiceGross(inv);
-          const p = computePayable(g, inv.royaltyPct, inv.feePct);
+          const p = computePayable(g, inv.royaltyPct, inv.feePct, inv.serviceFeePct);
           gross += g;
           royalty += p.royalty;
           fees += p.fees;
+          service += p.service;
           payable += p.payable;
         }
         const seq = (nextSeq.get(franchiseId) ?? 0) + 1;
@@ -365,6 +447,7 @@ export function FasProvider({ children }: { children: ReactNode }) {
           gross: round2(gross),
           royalty: round2(royalty),
           fees: round2(fees),
+          ...(service > 0 && { service: round2(service) }),
           amount: round2(payable),
           status: 'pending',
           invoiceDate: sorted[0].invoiceDate,
@@ -416,6 +499,12 @@ export function FasProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
+  const markBillsPaid = useCallback((billIds: string[]) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const ids = new Set(billIds);
+    setBills((prev) => prev.map((b) => (ids.has(b.id) && !b.paidOn ? { ...b, paidOn: today } : b)));
+  }, []);
+
   const deleteBill = useCallback(
     (billId: string) => {
       const bill = bills.find((b) => b.id === billId);
@@ -462,7 +551,13 @@ export function FasProvider({ children }: { children: ReactNode }) {
       const nextOverrides = existing
         ? feeOverrides.map((o) =>
             o.id === existing.id
-              ? { ...o, royaltyPct: override.royaltyPct, feePct: override.feePct, territory: override.territory ?? o.territory }
+              ? {
+                  ...o,
+                  royaltyPct: override.royaltyPct,
+                  feePct: override.feePct,
+                  serviceFeePct: override.serviceFeePct ?? o.serviceFeePct,
+                  territory: override.territory ?? o.territory,
+                }
               : o,
           )
         : [...feeOverrides, { ...override, id: newId }];
@@ -493,11 +588,11 @@ export function FasProvider({ children }: { children: ReactNode }) {
       profile,
       settingsAccess,
       isAdmin,
-      updateInvoiceFees,
       processInvoices,
       processInvoicesCombined,
       syncBills,
       resyncBill,
+      markBillsPaid,
       deleteBill,
       setFeeDefaults,
       upsertFeeOverride,
@@ -520,7 +615,7 @@ export function FasProvider({ children }: { children: ReactNode }) {
       profile,
       settingsAccess,
       isAdmin,
-      updateInvoiceFees,
+      markBillsPaid,
       processInvoices,
       processInvoicesCombined,
       syncBills,

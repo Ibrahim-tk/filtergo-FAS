@@ -157,7 +157,7 @@ export function InvoicesPageActions({
 
   return (
     <Box sx={{ display: 'flex', gap: 1 }}>
-      <Tooltip title="Download invoices, bills or a franchise summary for all franchises">
+      <Tooltip title="Export">
       <Button
         variant="outlined"
         startIcon={<FileDownloadOutlined />}
@@ -176,7 +176,7 @@ export function InvoicesPageActions({
       </Button>
       </Tooltip>
       {!hideActions && (
-      <Tooltip title="Bulk process invoices or sync bills across all franchises">
+      <Tooltip title="Bulk actions">
       <Button
         variant="contained"
         disableElevation

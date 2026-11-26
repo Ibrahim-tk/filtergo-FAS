@@ -25,8 +25,8 @@ export type Invoice = {
   lineItems: LineItem[];
   royaltyPct: number;
   feePct: number;
-  /** True once someone set royalty/fee on this invoice itself; franchise and global changes then skip it. */
-  feeOverride?: boolean;
+  /** Service fee %, deducted from the payable alongside royalty and territory fee. */
+  serviceFeePct?: number;
   territory?: string;
 };
 
@@ -42,6 +42,7 @@ export type Franchise = {
   territory: string;
   royaltyPct?: number;
   feePct?: number;
+  serviceFeePct?: number;
 };
 
 export type Bill = {
@@ -58,12 +59,16 @@ export type Bill = {
   amount: number;
   royalty: number;
   fees: number;
+  /** Service fee deducted (0 / absent when none applies). */
+  service?: number;
   gross: number;
   status: BillStatus;
   errorMessage?: string;
   invoiceDate: string;
   billDate: string;
   payDate?: string;
+  /** Date the franchise was paid for this bill (marked per invoice, so every bill of an invoice shares it). */
+  paidOn?: string;
   /** Set when the invoice is paid out over several bills (installment plan). */
   installment?: BillInstallment;
 };
@@ -80,6 +85,7 @@ export type BillInstallment = {
 export type FeeDefaults = {
   royaltyPct: number;
   feePct: number;
+  serviceFeePct?: number;
 };
 
 export type FeeOverride = {
@@ -88,6 +94,7 @@ export type FeeOverride = {
   territory?: string;
   royaltyPct: number;
   feePct: number;
+  serviceFeePct?: number;
 };
 
 export type AuditEntry = {
@@ -109,6 +116,7 @@ export type PayableBreakdown = {
   gross: number;
   royalty: number;
   fees: number;
+  service: number;
   payable: number;
 };
 

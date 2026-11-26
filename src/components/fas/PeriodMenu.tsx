@@ -31,7 +31,7 @@ export function PeriodMenu({ value, onChange }: { value: PeriodKey; onChange: (v
   const current = PERIODS.find((p) => p.value === value)?.label ?? 'Period';
   return (
     <>
-      <Tooltip title="Time period for invoice and royalty stats">
+      <Tooltip title="Time period">
       <Button
         variant="outlined"
         startIcon={<CalendarTodayOutlined sx={{ fontSize: '16px !important' }} />}

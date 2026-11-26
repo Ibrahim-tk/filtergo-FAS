@@ -348,7 +348,7 @@ export const theme = createTheme({
       styleOverrides: {
         root: {
           '&:last-of-type td': { borderBottom: 0 },
-          '&.MuiTableRow-hover:hover': { backgroundColor: colors.surfaceAlt },
+          '&.MuiTableRow-hover:hover': { backgroundColor: colors.rowHover },
           '&.Mui-selected, &.Mui-selected:hover': { backgroundColor: colors.greenSoft },
         },
       },

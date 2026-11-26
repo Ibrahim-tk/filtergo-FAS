@@ -8,11 +8,12 @@ export function invoiceGross(invoice: Pick<Invoice, 'lineItems'>): number {
   return invoice.lineItems.reduce((sum, li) => sum + lineItemTotal(li), 0);
 }
 
-export function computePayable(gross: number, royaltyPct: number, feePct: number): PayableBreakdown {
+export function computePayable(gross: number, royaltyPct: number, feePct: number, serviceFeePct = 0): PayableBreakdown {
   const royalty = round2((gross * royaltyPct) / 100);
   const fees = round2((gross * feePct) / 100);
-  const payable = round2(gross - royalty - fees);
-  return { gross: round2(gross), royalty, fees, payable };
+  const service = round2((gross * serviceFeePct) / 100);
+  const payable = round2(gross - royalty - fees - service);
+  return { gross: round2(gross), royalty, fees, service, payable };
 }
 
 export function formatMoney(n: number): string {
@@ -27,6 +28,14 @@ export function formatDate(iso: string): string {
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(
     new Date(y, m - 1, d),
   );
+}
+
+/** Short US date used in layout B tables: MM/DD/YY. */
+export function formatDateShort(iso?: string): string {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  if (!y || !m || !d) return iso;
+  return `${m.padStart(2, '0')}/${d.padStart(2, '0')}/${y.slice(-2)}`;
 }
 
 export function round2(n: number): number {

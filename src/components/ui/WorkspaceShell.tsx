@@ -29,16 +29,19 @@ export function WorkspaceHeader({
   title,
   subtitle,
   actions,
+  gutter = 2,
 }: {
   title: ReactNode;
   subtitle?: ReactNode;
   actions?: ReactNode;
+  /** Horizontal padding (theme spacing units). */
+  gutter?: number;
 }) {
   return (
     <Box
       sx={{
         flexShrink: 0,
-        px: 2,
+        px: gutter,
         py: 1.5,
         borderBottom: `1px solid ${colors.line}`,
         bgcolor: colors.paper,

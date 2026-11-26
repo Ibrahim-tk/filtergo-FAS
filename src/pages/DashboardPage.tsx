@@ -174,11 +174,11 @@ export default function DashboardPage() {
               '& > :first-of-type': { borderLeft: 'none' },
             }}
           >
-            <Kpi hint="Invoices paid in the selected period — click to view" to="/invoices?paid=paid" status="Paid" dot={colors.greenText} value={String(paid)} caption="invoices" />
-            <Kpi hint="Invoices awaiting payment in the selected period — click to view" to="/invoices?paid=unpaid" status="Unpaid" dot={colors.red} value={String(unpaid)} caption="invoices" />
-            <Kpi hint="Bills not yet in QuickBooks: awaiting sync or failed — click to review" to="/bills?status=pending" status="Pending bill approvals" value={String(pendingApprovals.length)} caption={failedCount ? `${pendingApprovals.length - failedCount} awaiting sync · ${failedCount} failed` : 'bills awaiting sync'} />
-            <Kpi hint="Bills created in the selected period, each booking royalty — click to view" to="/bills" status="Royalty booked" value={String(royaltyBookedCount)} caption="bills" />
-            <Kpi hint="Total royalty booked in the selected period — click for the report" to={`/reports?period=${period}`} status="Booked amount" value={formatMoney(royaltyBookedAmount)} caption="royalty" />
+            <Kpi hint="Paid invoices" to="/invoices?paid=paid" status="Paid" dot={colors.greenText} value={String(paid)} caption="invoices" />
+            <Kpi hint="Unpaid invoices" to="/invoices?paid=unpaid" status="Unpaid" dot={colors.red} value={String(unpaid)} caption="invoices" />
+            <Kpi hint="Not yet synced" to="/bills?status=pending" status="Pending bill approvals" value={String(pendingApprovals.length)} caption={failedCount ? `${pendingApprovals.length - failedCount} awaiting sync · ${failedCount} failed` : 'bills awaiting sync'} />
+            <Kpi hint="Bills created" to="/bills" status="Royalty booked" value={String(royaltyBookedCount)} caption="bills" />
+            <Kpi hint="Royalty booked" to={`/reports?period=${period}`} status="Booked amount" value={formatMoney(royaltyBookedAmount)} caption="royalty" />
           </Box>
         </Box>
 
@@ -200,7 +200,7 @@ export default function DashboardPage() {
                 minHeight: 0,
               }}
             >
-              <Panel title="Ready to process" count={ready.length} to="/invoices" linkLabel="Open invoices" hint="Go to Invoices to review and process these">
+              <Panel title="Ready to process" count={ready.length} to="/invoices" linkLabel="Open invoices" hint="Open invoices">
                 {ready.length === 0 ? (
                   <EmptyState title="Queue clear" description="No paid invoices waiting to become bills." />
                 ) : (
@@ -211,7 +211,7 @@ export default function DashboardPage() {
                           <Typography sx={{ fontWeight: 600, fontSize: 13, color: colors.ink700 }} noWrap>
                             {inv.number}
                           </Typography>
-                          <Tooltip title="Paid, but no bill has been created yet">
+                          <Tooltip title="Not billed yet">
                             <span>
                               <StatusChip tone="info" label="Unprocessed" />
                             </span>
@@ -231,7 +231,7 @@ export default function DashboardPage() {
             </Box>
 
             <Box sx={{ minHeight: 0 }}>
-              <Panel title="Pending bill approvals" count={attention.length} to="/bills?status=pending" linkLabel="Open bills" hint="Go to Bills to sync or fix these">
+              <Panel title="Pending bill approvals" count={attention.length} to="/bills?status=pending" linkLabel="Open bills" hint="Open bills">
                 {attention.length === 0 ? (
                   <EmptyState title="All synced" description="No bills are waiting for approval or failed to sync." />
                 ) : (

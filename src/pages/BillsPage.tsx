@@ -142,7 +142,7 @@ export default function BillsPage() {
                 status="Payable"
                 value={formatMoney(stats.payable)}
                 caption={`royalty ${formatMoney(stats.royalty)}`}
-                hint="Total owed to franchises across all bills, after royalty and fees"
+                hint="Owed to franchises"
               />
             </Box>
           </Box>

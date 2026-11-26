@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useMemo, useState, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
@@ -17,19 +17,18 @@ import ChevronLeftRounded from '@mui/icons-material/ChevronLeftRounded';
 import ChevronRightRounded from '@mui/icons-material/ChevronRightRounded';
 import FileDownloadOutlined from '@mui/icons-material/FileDownloadOutlined';
 import ViewColumnOutlined from '@mui/icons-material/ViewColumnOutlined';
-import KeyboardArrowDownRounded from '@mui/icons-material/KeyboardArrowDownRounded';
-import KeyboardArrowRightRounded from '@mui/icons-material/KeyboardArrowRightRounded';
 import SearchRounded from '@mui/icons-material/SearchRounded';
+import NorthEastRounded from '@mui/icons-material/NorthEastRounded';
+import DoneRounded from '@mui/icons-material/DoneRounded';
+import { syncBtnSx } from './rowActions';
 import type { Bill, BillStatus } from '../../types/fas';
 import { TableCheckbox } from '../ui/TableCheckbox';
 import { StatusChip, type StatusTone } from '../ui/StatusChip';
-import { downloadCsv, formatDate, formatMoney, round2, toCsv } from '../../utils/payable';
-import { buildInvoiceGroups, unbilledInstallments, type InvoiceGroup } from '../../utils/ledger';
+import { downloadCsv, formatDateShort, formatMoney, round2, toCsv } from '../../utils/payable';
+import { billNumber, buildInvoiceGroups, unbilledInstallments, type InvoiceGroup } from '../../utils/ledger';
 import { colors, layout, radius } from '../../theme/tokens';
 import { filterSelectProps } from './filterSelect';
-import { syncBtnSx } from './rowActions';
 import { ColumnCustomizationDialog, type ColumnDef } from './ColumnCustomizationDialog';
-import SyncRounded from '@mui/icons-material/SyncRounded';
 
 type Props = {
   bills: Bill[];
@@ -44,10 +43,18 @@ type Props = {
   onOpenGroup: (key: string) => void;
   activeId?: string | null;
   activeGroupKey?: string | null;
-  onSyncMany?: (ids: string[]) => void;
+  /** Marks the franchise as paid for an invoice (all of its bills). */
+  onMarkPaid?: (billIds: string[]) => void;
+  /**
+   * Layout C: a combined bill (one bill over several invoices) is one row with its invoices
+   * listed down the row, mirroring how an installment plan lists its bills.
+   */
+  linkShared?: boolean;
+  /** Needed with linkShared to show each invoice's share of a combined bill. */
+  invoiceGross?: (invoiceId: string) => number;
 };
 
-type View = '' | 'partial' | 'full' | 'sync';
+type View = '' | 'partial' | 'full' | 'unpaid' | 'paid';
 
 export const BILL_STATUS_META: Record<BillStatus, { tone: StatusTone; label: string }> = {
   synced: { tone: 'success', label: 'Synced' },
@@ -55,11 +62,9 @@ export const BILL_STATUS_META: Record<BillStatus, { tone: StatusTone; label: str
   failed: { tone: 'error', label: 'Failed' },
 };
 
-/** One status per invoice: the worst bill status, or "Partially billed" when installments remain. */
+/** One status per invoice: has the franchise been paid for it? Bills don't carry their own. */
 export function GroupStatusChip({ group: g }: { group: InvoiceGroup }) {
-  if (g.counts.failed) return <StatusChip tone="error" label="Failed" />;
-  if (g.counts.pending) return <StatusChip tone="warning" label="Pending" />;
-  return <StatusChip tone="success" label="Synced" />;
+  return g.paid ? <StatusChip tone="success" label="Paid" /> : <StatusChip tone="warning" label="Unpaid" />;
 }
 
 const headSx = {
@@ -80,23 +85,43 @@ const cellSx = {
   whiteSpace: 'nowrap' as const,
 };
 const numSx = { fontVariantNumeric: 'tabular-nums' as const };
-const CHEVRON = 28;
+const LINE = 28;
 
-type ColId = 'billed' | 'left' | 'payable' | 'status' | 'company' | 'invoiceDate' | 'billDate' | 'gross' | 'royalty' | 'fees' | 'payDate';
+type ColId =
+  | 'invoice'
+  | 'bill'
+  | 'billId'
+  | 'billDate'
+  | 'billAmount'
+  | 'left'
+  | 'payable'
+  | 'status'
+  | 'company'
+  | 'invoiceDate'
+  | 'gross'
+  | 'royalty'
+  | 'fees'
+  | 'payDate';
+
+/** Columns that list one line per bill (installment) inside the invoice row. */
+const STACKED = new Set<ColId>(['bill', 'billId', 'billDate', 'billAmount']);
 
 /** Invoice is always first; these can be added, removed and reordered from Customize. */
 const LEDGER_COLUMNS: (ColumnDef & { id: ColId; money?: boolean })[] = [
-  { id: 'billed', label: 'Billed', defaultVisible: true },
-  { id: 'left', label: 'Left to bill', defaultVisible: true, money: true },
+  { id: 'billDate', label: 'Bill date', defaultVisible: true },
+  { id: 'invoice', label: 'Invoice', defaultVisible: true },
+  { id: 'bill', label: 'Bill', defaultVisible: true },
+  { id: 'billId', label: 'Bill ID', defaultVisible: true },
+  { id: 'billAmount', label: 'Bill amount', defaultVisible: true, money: true },
+  { id: 'left', label: 'Outstanding', defaultVisible: true, money: true },
   { id: 'payable', label: 'Payable', defaultVisible: true, money: true },
   { id: 'status', label: 'Status', defaultVisible: true },
   { id: 'company', label: 'Company', defaultVisible: false },
   { id: 'invoiceDate', label: 'Invoice date', defaultVisible: false },
-  { id: 'billDate', label: 'Bill date', defaultVisible: false },
   { id: 'gross', label: 'Gross', defaultVisible: false, money: true },
   { id: 'royalty', label: 'Royalty', defaultVisible: false, money: true },
   { id: 'fees', label: 'Territory fee', defaultVisible: false, money: true },
-  { id: 'payDate', label: 'Pay date', defaultVisible: false },
+  { id: 'payDate', label: 'Paid on', defaultVisible: false },
 ];
 const COL_BY_ID = new Map(LEDGER_COLUMNS.map((c) => [c.id, c]));
 
@@ -110,17 +135,17 @@ export function BillLedgerTable({
   invoiceNumber,
   companyName,
   selectedIds,
-  onToggleSelect,
   onToggleSelectAll,
   onRowClick,
   onOpenGroup,
   activeId,
   activeGroupKey,
-  onSyncMany,
+  onMarkPaid,
+  linkShared,
+  invoiceGross,
 }: Props) {
   const [search, setSearch] = useState('');
   const [view, setView] = useState<View>('');
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [customizeOpen, setCustomizeOpen] = useState(false);
   const [visibleIds, setVisibleIds] = useState<string[]>(() => LEDGER_COLUMNS.filter((c) => c.defaultVisible).map((c) => c.id));
   const [order, setOrder] = useState<string[]>(() => LEDGER_COLUMNS.map((c) => c.id));
@@ -131,14 +156,14 @@ export function BillLedgerTable({
   const groups = useMemo(() => buildInvoiceGroups(bills, invoiceNumber, companyName), [bills, invoiceNumber, companyName]);
 
   const isPartial = (g: InvoiceGroup) => g.remaining.amount > 0.005;
-  const hasSyncIssue = (g: InvoiceGroup) => g.counts.failed > 0 || g.counts.pending > 0;
 
   const viewCounts = useMemo(
     () => ({
       '': groups.length,
       partial: groups.filter(isPartial).length,
       full: groups.filter((g) => !isPartial(g)).length,
-      sync: groups.filter(hasSyncIssue).length,
+      unpaid: groups.filter((g) => !g.paid).length,
+      paid: groups.filter((g) => g.paid).length,
     }),
     [groups],
   );
@@ -149,17 +174,17 @@ export function BillLedgerTable({
       .filter((g) => {
         if (view === 'partial' && !isPartial(g)) return false;
         if (view === 'full' && isPartial(g)) return false;
-        if (view === 'sync' && !hasSyncIssue(g)) return false;
+        if (view === 'unpaid' && g.paid) return false;
+        if (view === 'paid' && !g.paid) return false;
         if (q) {
-          const hay = `${g.invoiceNumbers.join(' ')} ${g.companyNames.join(' ')} ${g.bills.map((b) => b.id).join(' ')}`.toLowerCase();
+          const hay = `${g.invoiceNumbers.join(' ')} ${g.companyNames.join(' ')} ${g.bills.map((b) => `${b.id} ${billNumber(b, invoiceNumber)}`).join(' ')}`.toLowerCase();
           if (!hay.includes(q)) return false;
         }
         return true;
       })
       .sort((a, b) => {
-        // What still needs work first: partly billed, then sync problems, then newest.
-        const rank = (g: InvoiceGroup) => (isPartial(g) ? 0 : hasSyncIssue(g) ? 1 : 2);
-        return rank(a) - rank(b) || b.lastBillDate.localeCompare(a.lastBillDate) || a.key.localeCompare(b.key);
+        // Newest invoices first (by first bill date), so single bills and installment plans stay mixed.
+        return b.bills[0].billDate.localeCompare(a.bills[0].billDate) || a.key.localeCompare(b.key);
       });
   }, [groups, view, search]);
 
@@ -168,36 +193,28 @@ export function BillLedgerTable({
   const start = safePage * rowsPerPage;
   const pageGroups = filtered.slice(start, start + rowsPerPage);
 
-  const selectableIds = pageGroups.flatMap((g) => g.bills.filter((b) => b.status !== 'synced').map((b) => b.id));
+  const selectableIds = pageGroups.flatMap((g) => g.unpaidIds);
   const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selectedIds.has(id));
   const someSelected = selectableIds.some((id) => selectedIds.has(id));
 
   const totalPayable = useMemo(() => round2(filtered.reduce((s, g) => s + g.plan.amount, 0)), [filtered]);
   const totalLeft = useMemo(() => round2(filtered.reduce((s, g) => s + g.remaining.amount, 0)), [filtered]);
 
-  const toggle = (key: string) =>
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-
   const exportCsv = () => {
-    const headers = ['Invoice #', 'Company', 'Bill ID', 'Installment', 'Bill date', 'Gross', 'Royalty', 'Fees', 'Payable', 'Status', 'Pay date'];
+    const headers = ['Invoice #', 'Company', 'Bill ID', 'Installment', 'Bill date', 'Gross', 'Royalty', 'Fees', 'Payable', 'Status', 'Paid on'];
     const rows = filtered.flatMap((g) =>
       g.bills.map((b) => [
         g.invoiceNumbers.join('; '),
         g.companyNames.join('; '),
-        b.id,
+        billNumber(b, invoiceNumber),
         g.planned > 1 ? `${b.installment?.index ?? 1} of ${g.planned}` : '',
         b.billDate,
         b.gross,
         b.royalty,
         b.fees,
         b.amount,
-        b.status,
-        b.payDate ?? '',
+        b.paidOn ? 'Paid' : 'Unpaid',
+        b.paidOn ?? '',
       ]),
     );
     downloadCsv('bills-by-invoice.csv', toCsv(headers, rows));
@@ -205,17 +222,9 @@ export function BillLedgerTable({
 
   const dash = <Box component="span" sx={{ color: colors.ink500 }}>—</Box>;
 
-  /** Invoice-level value for a column. */
+  /** Invoice-level value for a column (top line of the row). */
   const groupCell = (g: InvoiceGroup, id: ColId) => {
     switch (id) {
-      case 'billed':
-        return g.planned > 1 ? (
-          <Typography sx={{ fontSize: 13, color: colors.ink }}>
-            {g.bills.length} of {g.planned} installments
-          </Typography>
-        ) : (
-          <Typography sx={{ fontSize: 13, color: colors.ink600 }}>Billed in full</Typography>
-        );
       case 'left':
         return isPartial(g) ? formatMoney(g.remaining.amount) : dash;
       case 'payable':
@@ -225,9 +234,7 @@ export function BillLedgerTable({
       case 'company':
         return g.companyLabel;
       case 'invoiceDate':
-        return formatDate(g.invoiceDate);
-      case 'billDate':
-        return formatDate(g.lastBillDate);
+        return formatDateShort(g.invoiceDate);
       case 'gross':
         return formatMoney(g.plan.gross);
       case 'royalty':
@@ -235,29 +242,68 @@ export function BillLedgerTable({
       case 'fees':
         return formatMoney(g.plan.fees);
       case 'payDate':
-        return g.lastPayDate ? formatDate(g.lastPayDate) : dash;
+        return g.paid && g.paidOn ? formatDateShort(g.paidOn) : dash;
+      default:
+        return null;
     }
   };
 
-  /** Value for one installment bill (blank where the invoice row already says it). */
-  const billCell = (b: Bill, id: ColId) => {
+  /** Every installment of the invoice, billed or still to bill, one line each. */
+  const lines = (g: InvoiceGroup) => {
+    const missing = unbilledInstallments(g);
+    const each = missing.length ? round2(g.remaining.amount / missing.length) : 0;
+    return [
+      ...g.bills.map((b) => ({ idx: b.installment?.index ?? 1, bill: b as Bill | undefined, amount: b.amount })),
+      ...missing.map((idx) => ({ idx, bill: undefined as Bill | undefined, amount: each })),
+    ].sort((a, b) => a.idx - b.idx);
+  };
+
+  /** Value for one bill line (or a still-to-bill installment). */
+  const lineCell = (id: ColId, idx: number, b: Bill | undefined, amount: number, last: boolean): ReactNode => {
+    const muted = (v: ReactNode) => <Box component="span" sx={{ color: colors.ink500 }}>{v}</Box>;
     switch (id) {
-      case 'billed':
-        return <Box component="span" sx={{ color: colors.ink600 }}>Billed {formatDate(b.billDate)}</Box>;
-      case 'payable':
-        return formatMoney(b.amount);
-      case 'status':
-        return <StatusChip tone={BILL_STATUS_META[b.status].tone} label={BILL_STATUS_META[b.status].label} />;
+      case 'bill': {
+        // Timeline dot: green once the franchise is paid for it, grey while unpaid, hollow if not billed yet.
+        const dot = b
+          ? { bgcolor: b.paidOn ? colors.green : colors.ink500, border: 'none' }
+          : { bgcolor: colors.paper, border: `1.5px solid ${colors.ink400}` };
+        return (
+          <Box sx={{ display: 'flex', alignItems: 'center', position: 'relative', height: '100%' }}>
+            <Box sx={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, mr: 1.25, boxSizing: 'border-box', ...dot }} />
+            {!last && (
+              <Box
+                aria-hidden
+                sx={{ position: 'absolute', left: '3.5px', top: `calc(50% + 6px)`, height: `${LINE - 12}px`, width: '1px', bgcolor: colors.ink400 }}
+              />
+            )}
+            {b ? (
+              <>
+                <Box component="span" className="bill-link" sx={{ display: 'inline-flex', alignItems: 'center', color: colors.ink, transition: 'color 150ms ease' }}>
+                  Bill {idx}
+                  <NorthEastRounded
+                    className="bill-arrow"
+                    sx={{
+                      fontSize: 13,
+                      ml: 0.25,
+                      opacity: 0,
+                      transform: 'translate(-3px, 3px)',
+                      transition: 'opacity 150ms ease, transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+                    }}
+                  />
+                </Box>
+              </>
+            ) : (
+              muted(`Bill ${idx}`)
+            )}
+          </Box>
+        );
+      }
+      case 'billId':
+        return b ? billNumber(b, invoiceNumber) : muted('Not billed yet');
       case 'billDate':
-        return formatDate(b.billDate);
-      case 'gross':
-        return formatMoney(b.gross);
-      case 'royalty':
-        return formatMoney(b.royalty);
-      case 'fees':
-        return formatMoney(b.fees);
-      case 'payDate':
-        return b.payDate ? formatDate(b.payDate) : dash;
+        return b ? formatDateShort(b.billDate) : muted('—');
+      case 'billAmount':
+        return b ? formatMoney(amount) : muted(formatMoney(amount));
       default:
         return null;
     }
@@ -270,13 +316,87 @@ export function BillLedgerTable({
   });
   const alignFor = (id: ColId) => (COL_BY_ID.get(id)?.money ? 'right' : 'left');
 
+  /** Hover/click state for a single bill line, shared across the bill columns of the row. */
+  const [hoverLine, setHoverLine] = useState<string | null>(null);
+
+  /**
+   * One row per invoice. Its bills run down the bill columns as a timeline, one line each;
+   * invoice-level values sit on the row's centre line.
+   */
   const groupRow = (g: InvoiceGroup) => {
-    const plan = g.planned > 1;
-    const isOpen = expanded.has(g.key);
-    const ids = g.bills.filter((b) => b.status !== 'synced').map((b) => b.id);
+    const ids = g.unpaidIds;
     const allOn = ids.length > 0 && ids.every((id) => selectedIds.has(id));
     const someOn = ids.some((id) => selectedIds.has(id));
-    const pendingIds = g.bills.filter((b) => b.status === 'pending').map((b) => b.id);
+    const rows = lines(g);
+    const mid = { ...cellSx, verticalAlign: 'middle' };
+    // Layout C: one bill over several invoices lists the invoices down the row instead.
+    const combined = !!linkShared && g.invoiceIds.length > 1;
+    const bill = g.bills[0];
+    const share = (invoiceId: string) => {
+      const gross = invoiceGross?.(invoiceId) ?? 0;
+      return bill.gross ? round2((bill.amount * gross) / bill.gross) : 0;
+    };
+    const dotSx = (last: boolean) => (
+      <>
+        <Box sx={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, mr: 1.25, bgcolor: g.paid ? colors.green : colors.ink500 }} />
+        {!last && (
+          <Box aria-hidden sx={{ position: 'absolute', left: '3.5px', top: 'calc(50% + 6px)', height: `${LINE - 12}px`, width: '1px', bgcolor: colors.ink400 }} />
+        )}
+      </>
+    );
+    const invoiceStack = (money: boolean) => (
+      <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+        {g.invoiceIds.map((invId, i) => (
+          <Box
+            key={invId}
+            sx={{ height: LINE, display: 'flex', alignItems: 'center', justifyContent: money ? 'flex-end' : 'flex-start', position: 'relative' }}
+          >
+            {money ? (
+              formatMoney(share(invId))
+            ) : (
+              <>
+                {dotSx(i === g.invoiceIds.length - 1)}
+                <Box component="span" sx={{ fontWeight: 600, color: colors.ink }}>{g.invoiceNumbers[i]}</Box>
+              </>
+            )}
+          </Box>
+        ))}
+      </Box>
+    );
+    const stacked = (id: ColId) => (
+      <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+        {rows.map(({ idx, bill: b, amount }, i) => {
+          const key = `${g.key}-${idx}`;
+          const hot = !!b && hoverLine === key;
+          return (
+            <Box
+              key={idx}
+              onMouseEnter={() => setHoverLine(key)}
+              onMouseLeave={() => setHoverLine((k) => (k === key ? null : k))}
+              onClick={(e) => {
+                if (!b) return;
+                e.stopPropagation();
+                onRowClick(b.id);
+              }}
+              className={hot ? 'line-hot' : undefined}
+              sx={{
+                height: LINE,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: COL_BY_ID.get(id)?.money ? 'flex-end' : 'flex-start',
+                cursor: b ? 'pointer' : 'default',
+                bgcolor: b && activeId === b.id ? colors.greenSoft : undefined,
+                '&.line-hot .bill-link': { color: colors.green },
+                '&.line-hot .bill-arrow': { opacity: 1, transform: 'translate(0, 0)' },
+                '@media (prefers-reduced-motion: reduce)': { '& .bill-arrow': { transition: 'opacity 150ms ease', transform: 'none' } },
+              }}
+            >
+              {lineCell(id, idx, b, amount, i === rows.length - 1)}
+            </Box>
+          );
+        })}
+      </Box>
+    );
     return (
       <TableRow
         key={g.key}
@@ -285,42 +405,54 @@ export function BillLedgerTable({
         onClick={() => onOpenGroup(g.key)}
         sx={{ cursor: 'pointer', '&.Mui-selected, &.Mui-selected:hover': { bgcolor: colors.greenSoft } }}
       >
-        <TableCell padding="checkbox" sx={cellSx} onClick={(e) => e.stopPropagation()}>
+        <TableCell padding="checkbox" sx={mid} onClick={(e) => e.stopPropagation()}>
           <TableCheckbox checked={allOn} indeterminate={someOn && !allOn} disabled={!ids.length} onChange={() => onToggleSelectAll(ids)} />
         </TableCell>
-        <TableCell sx={cellSx}>
-          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            {plan ? (
+        {cols.map((id) =>
+          combined && id === 'invoice' ? (
+            <TableCell key={id} sx={cellFor(id, { py: 1 })}>
+              {invoiceStack(false)}
+            </TableCell>
+          ) : combined && id === 'billAmount' ? (
+            <TableCell key={id} align="right" sx={cellFor(id, { py: 1, color: colors.ink700 })}>
+              {invoiceStack(true)}
+            </TableCell>
+          ) : combined && STACKED.has(id) ? (
+            <TableCell key={id} align={alignFor(id)} sx={cellFor(id, { ...mid, color: colors.ink700 })}>
+              {id === 'bill' ? (
+                <Box component="span" sx={{ fontSize: 11, lineHeight: '18px', px: 0.75, borderRadius: `${radius.sm}px`, bgcolor: colors.surface, color: colors.ink700, whiteSpace: 'nowrap' }}>
+                  Combined · {g.invoiceIds.length} invoices
+                </Box>
+              ) : (
+                lineCell(id, 1, bill, bill.amount, true)
+              )}
+            </TableCell>
+          ) : id === 'invoice' ? (
+            <TableCell key={id} sx={mid}>
+              <Tooltip title={g.companyNames.join(', ')} placement="right" enterDelay={500}>
+                <Typography sx={{ fontSize: 13, fontWeight: 600, color: colors.ink }}>{g.invoiceLabel}</Typography>
+              </Tooltip>
+            </TableCell>
+          ) : STACKED.has(id) ? (
+            <TableCell key={id} align={alignFor(id)} sx={cellFor(id, { color: colors.ink700, py: 1 })}>
+              {stacked(id)}
+            </TableCell>
+          ) : (
+            <TableCell key={id} align={alignFor(id)} sx={cellFor(id, { ...mid, ...(id === 'company' || id.endsWith('Date') ? { color: colors.ink700 } : {}) })}>
+              {groupCell(g, id)}
+            </TableCell>
+          ),
+        )}
+        <TableCell align="right" sx={{ ...mid, py: 1, pl: 0, width: 56 }} onClick={(e) => e.stopPropagation()}>
+          {!g.paid && onMarkPaid && (
+            <Tooltip title="Mark as paid">
               <IconButton
                 size="small"
-                aria-label={isOpen ? 'Hide installments' : 'Show installments'}
-                aria-expanded={isOpen}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggle(g.key);
-                }}
-                sx={{ width: 24, height: 24, mr: `${CHEVRON - 24}px`, color: colors.ink600 }}
+                aria-label={`Mark ${g.invoiceLabel} as paid`}
+                onClick={() => onMarkPaid(g.unpaidIds)}
+                sx={{ ...syncBtnSx, '&:hover': { borderColor: colors.green, bgcolor: colors.greenSoft, color: colors.greenText } }}
               >
-                {isOpen ? <KeyboardArrowDownRounded sx={{ fontSize: 20 }} /> : <KeyboardArrowRightRounded sx={{ fontSize: 20 }} />}
-              </IconButton>
-            ) : (
-              <Box sx={{ width: CHEVRON, flexShrink: 0 }} />
-            )}
-            <Tooltip title={g.companyNames.join(', ')} placement="right" enterDelay={500}>
-              <Typography sx={{ fontSize: 13, fontWeight: 600, color: colors.ink }}>{g.invoiceLabel}</Typography>
-            </Tooltip>
-          </Box>
-        </TableCell>
-        {cols.map((id) => (
-          <TableCell key={id} align={alignFor(id)} sx={cellFor(id, id === 'company' || id.endsWith('Date') ? { color: colors.ink700 } : undefined)}>
-            {groupCell(g, id)}
-          </TableCell>
-        ))}
-        <TableCell align="right" sx={cellSx} onClick={(e) => e.stopPropagation()}>
-          {pendingIds.length > 0 && onSyncMany && (
-            <Tooltip title={`Sync ${pendingIds.length} pending bill${pendingIds.length === 1 ? '' : 's'} to QuickBooks`}>
-              <IconButton size="small" aria-label="Sync pending bills" onClick={() => onSyncMany(pendingIds)} sx={syncBtnSx}>
-                <SyncRounded fontSize="small" />
+                <DoneRounded sx={{ fontSize: 18 }} />
               </IconButton>
             </Tooltip>
           )}
@@ -329,75 +461,11 @@ export function BillLedgerTable({
     );
   };
 
-  const installmentRow = (g: InvoiceGroup, b: Bill) => {
-    const selected = selectedIds.has(b.id);
-    return (
-      <TableRow
-        key={b.id}
-        hover
-        selected={selected || activeId === b.id}
-        onClick={() => onRowClick(b.id)}
-        sx={{ cursor: 'pointer', bgcolor: '#FCFCFD', '&.Mui-selected, &.Mui-selected:hover': { bgcolor: colors.greenSoft } }}
-      >
-        <TableCell padding="checkbox" sx={cellSx} onClick={(e) => e.stopPropagation()}>
-          <TableCheckbox checked={selected} disabled={b.status === 'synced'} onChange={() => onToggleSelect(b.id)} />
-        </TableCell>
-        <TableCell sx={{ ...cellSx, pl: `calc(16px + ${CHEVRON}px)` }}>
-          <Typography sx={{ fontSize: 13, color: colors.ink700 }}>
-            Installment {b.installment?.index ?? 1} of {g.planned}
-          </Typography>
-        </TableCell>
-        {cols.map((id) => (
-          <TableCell key={id} align={alignFor(id)} sx={cellFor(id, { color: colors.ink700 })}>
-            {billCell(b, id)}
-          </TableCell>
-        ))}
-        <TableCell sx={cellSx} />
-      </TableRow>
-    );
-  };
-
-  const scheduledRows = (g: InvoiceGroup) => {
-    const missing = unbilledInstallments(g);
-    const share = (v: number) => formatMoney(missing.length ? round2(v / missing.length) : 0);
-    const muted = { ...cellSx, color: colors.ink500, bgcolor: '#FCFCFD' };
-    const value = (id: ColId) => {
-      switch (id) {
-        case 'billed':
-          return 'Not billed yet';
-        case 'left':
-          return share(g.remaining.amount);
-        case 'status':
-          return <StatusChip tone="neutral" label="Scheduled" />;
-        case 'gross':
-          return share(g.remaining.gross);
-        case 'royalty':
-          return share(g.remaining.royalty);
-        case 'fees':
-          return share(g.remaining.fees);
-        default:
-          return null;
-      }
-    };
-    return missing.map((idx) => (
-      <TableRow key={`${g.key}-un-${idx}`}>
-        <TableCell padding="checkbox" sx={muted} />
-        <TableCell sx={{ ...muted, pl: `calc(16px + ${CHEVRON}px)` }}>
-          Installment {idx} of {g.planned}
-        </TableCell>
-        {cols.map((id) => (
-          <TableCell key={id} align={alignFor(id)} sx={{ ...muted, ...(COL_BY_ID.get(id)?.money && numSx) }}>
-            {value(id)}
-          </TableCell>
-        ))}
-        <TableCell sx={muted} />
-      </TableRow>
-    ));
-  };
-
   const footerValue = (id: ColId) => {
     const sum = (f: (g: InvoiceGroup) => number) => formatMoney(round2(filtered.reduce((t, g) => t + f(g), 0)));
     switch (id) {
+      case 'billAmount':
+        return sum((g) => g.billed.amount);
       case 'left':
         return formatMoney(totalLeft);
       case 'payable':
@@ -462,16 +530,17 @@ export function BillLedgerTable({
           {...filterSelectProps(
             'Show',
             view,
-            { '': 'All', partial: 'Partly billed', full: 'Billed in full', sync: 'Sync issues' },
+            { '': 'All', partial: 'Outstanding', full: 'Fully billed', unpaid: 'Unpaid', paid: 'Paid' },
             200,
           )}
         >
           {(
             [
               ['', 'All'],
-              ['partial', 'Partly billed'],
-              ['full', 'Billed in full'],
-              ['sync', 'Sync issues'],
+              ['partial', 'Outstanding'],
+              ['full', 'Fully billed'],
+              ['unpaid', 'Unpaid'],
+              ['paid', 'Paid'],
             ] as [View, string][]
           ).map(([v, label]) => (
             <MenuItem key={v} value={v} sx={{ fontSize: 13, display: 'flex', justifyContent: 'space-between', gap: 3 }}>
@@ -485,12 +554,12 @@ export function BillLedgerTable({
 
         <Box sx={{ flex: 1 }} />
 
-        <Tooltip title="Show, hide or reorder columns">
+        <Tooltip title="Columns">
           <Button variant="outlined" color="secondary" size="small" startIcon={<ViewColumnOutlined />} onClick={() => setCustomizeOpen(true)}>
             Customize
           </Button>
         </Tooltip>
-        <Tooltip title="Download every bill in this view as CSV, with full amounts">
+        <Tooltip title="Export CSV">
           <Button variant="outlined" color="secondary" size="small" startIcon={<FileDownloadOutlined />} onClick={exportCsv}>
             Export
           </Button>
@@ -514,22 +583,17 @@ export function BillLedgerTable({
                     onChange={() => onToggleSelectAll(selectableIds)}
                   />
                 </TableCell>
-                <TableCell sx={{ ...headSx, pl: `calc(16px + ${CHEVRON}px)`, width: '30%' }}>Invoice</TableCell>
                 {cols.map((id) => (
                   <TableCell key={id} align={alignFor(id)} sx={headSx}>
                     {COL_BY_ID.get(id)?.label}
                   </TableCell>
                 ))}
-                <TableCell sx={{ ...headSx, width: 64 }} aria-label="Actions" />
+                <TableCell sx={{ ...headSx, width: 56, pl: 0 }} aria-label="Actions" />
               </TableRow>
             </TableHead>
             <TableBody>
               {pageGroups.map((g) => (
-                <Fragment key={g.key}>
-                  {groupRow(g)}
-                  {expanded.has(g.key) && g.bills.map((b) => installmentRow(g, b))}
-                  {expanded.has(g.key) && scheduledRows(g)}
-                </Fragment>
+                <Fragment key={g.key}>{groupRow(g)}</Fragment>
               ))}
             </TableBody>
             <TableFooter>
@@ -550,10 +614,9 @@ export function BillLedgerTable({
                 }}
               >
                 <TableCell padding="checkbox" />
-                <TableCell sx={{ fontWeight: 600, pl: `calc(16px + ${CHEVRON}px) !important` }}>Total</TableCell>
-                {cols.map((id) => (
+                {cols.map((id, i) => (
                   <TableCell key={id} align={alignFor(id)} sx={{ ...numSx, fontWeight: 700 }}>
-                    {footerValue(id)}
+                    {i === 0 ? 'Total' : footerValue(id)}
                   </TableCell>
                 ))}
                 <TableCell />

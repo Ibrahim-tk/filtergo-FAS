@@ -4,7 +4,6 @@ import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import CloseRounded from '@mui/icons-material/CloseRounded';
-import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import type { Invoice, PayableBreakdown } from '../../types/fas';
 import { StatusChip } from '../ui/StatusChip';
@@ -16,7 +15,6 @@ type Props = {
   franchiseName: string;
   companyName: string;
   breakdown: PayableBreakdown;
-  onFeesChange: (next: { royaltyPct: number; feePct: number }) => void;
   onProcess: () => void;
   canProcess: boolean;
   notice?: ReactNode;
@@ -24,81 +22,7 @@ type Props = {
   onClose?: () => void;
 };
 
-function clampPct(n: number) {
-  if (Number.isNaN(n)) return 0;
-  return Math.min(100, Math.max(0, Math.round(n * 10) / 10));
-}
-
-function InlinePct({
-  value,
-  disabled,
-  onChange,
-  ariaLabel,
-}: {
-  value: number;
-  disabled?: boolean;
-  onChange: (n: number) => void;
-  ariaLabel: string;
-}) {
-  return (
-    <Box
-      component="span"
-      sx={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 0,
-        mx: 0.5,
-        px: 0.75,
-        py: 0.35,
-        borderRadius: '6px',
-        border: 'none',
-        bgcolor: 'transparent',
-        transition: 'background-color 120ms ease',
-        ...(!disabled && {
-          '&:hover, &:focus-within': {
-            bgcolor: colors.surface,
-          },
-        }),
-      }}
-    >
-      <TextField
-        type="number"
-        size="small"
-        variant="standard"
-        value={value}
-        disabled={disabled}
-        aria-label={ariaLabel}
-        onChange={(e) => onChange(clampPct(Number(e.target.value)))}
-        inputProps={{ min: 0, max: 100, step: 0.1 }}
-        InputProps={{ disableUnderline: true }}
-        sx={{
-          width: `${Math.max(String(value).length, 1) + 1}ch`,
-          minWidth: '2ch',
-          maxWidth: '5ch',
-          '& .MuiInputBase-root': {
-            fontSize: 13,
-            fontWeight: 600,
-            fontVariantNumeric: 'tabular-nums',
-            color: colors.ink,
-          },
-          '& input': {
-            p: 0,
-            textAlign: 'right',
-            MozAppearance: 'textfield',
-            cursor: disabled ? 'default' : 'text',
-          },
-          '& input::-webkit-outer-spin-button, & input::-webkit-inner-spin-button': {
-            WebkitAppearance: 'none',
-            m: 0,
-          },
-        }}
-      />
-      <Typography component="span" sx={{ fontSize: 13, fontWeight: 600, color: colors.ink, lineHeight: 1 }}>
-        %
-      </Typography>
-    </Box>
-  );
-}
+const RATE_HINT = 'Set in Fee settings';
 
 function Row({ label, value, muted }: { label: string; value: ReactNode; muted?: boolean }) {
   return (
@@ -177,7 +101,6 @@ export function ProfessionalInvoice({
   franchiseName,
   companyName,
   breakdown,
-  onFeesChange,
   onProcess,
   canProcess,
   notice,
@@ -238,36 +161,30 @@ export function ProfessionalInvoice({
           <TotalRow label="Gross (reconciled)" value={formatMoney(breakdown.gross)} />
           <TotalRow
             label={
-              <Tooltip title={readOnly ? 'Locked — invoice already processed' : 'Click the % to adjust royalty'} placement="top-start">
-                <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center' }}>
-                  Royalty
-                  <InlinePct
-                    value={invoice.royaltyPct}
-                    disabled={readOnly}
-                    ariaLabel="Royalty percent"
-                    onChange={(royaltyPct) => onFeesChange({ royaltyPct, feePct: invoice.feePct })}
-                  />
-                </Box>
+              <Tooltip title={RATE_HINT} placement="top-start">
+                <span>Royalty {invoice.royaltyPct}%</span>
               </Tooltip>
             }
             value={`− ${formatMoney(breakdown.royalty)}`}
           />
           <TotalRow
             label={
-              <Tooltip title={readOnly ? 'Locked — invoice already processed' : 'Click the % to adjust territory fee'} placement="top-start">
-                <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center' }}>
-                  Territory fee
-                  <InlinePct
-                    value={invoice.feePct}
-                    disabled={readOnly}
-                    ariaLabel="Territory fee percent"
-                    onChange={(feePct) => onFeesChange({ royaltyPct: invoice.royaltyPct, feePct })}
-                  />
-                </Box>
+              <Tooltip title={RATE_HINT} placement="top-start">
+                <span>Territory fee {invoice.feePct}%</span>
               </Tooltip>
             }
             value={`− ${formatMoney(breakdown.fees)}`}
           />
+          {breakdown.service > 0 && (
+            <TotalRow
+              label={
+                <Tooltip title={RATE_HINT} placement="top-start">
+                  <span>Service fee {invoice.serviceFeePct ?? 0}%</span>
+                </Tooltip>
+              }
+              value={`− ${formatMoney(breakdown.service)}`}
+            />
+          )}
           <Box
             sx={{
               display: 'flex',
@@ -291,11 +208,9 @@ export function ProfessionalInvoice({
               {formatMoney(breakdown.payable)}
             </Typography>
           </Box>
-          {!readOnly && (
-            <Typography sx={{ fontSize: 12, color: colors.ink500, mt: 1 }}>
-              Adjust royalty or territory fee before processing into a franchise bill.
-            </Typography>
-          )}
+          <Typography sx={{ fontSize: 12, color: colors.ink500, mt: 1 }}>
+            {readOnly ? 'Locked: this invoice is already billed.' : 'Rates come from the franchise or territory. Change them in Fee settings.'}
+          </Typography>
         </Section>
       </Box>
 
@@ -313,10 +228,10 @@ export function ProfessionalInvoice({
         <Tooltip
           title={
             canProcess
-              ? 'Create a franchise bill from this invoice'
+              ? 'Create bill'
               : readOnly
-                ? 'Already processed into a bill'
-                : 'Only paid invoices can be processed'
+                ? 'Already billed'
+                : 'Unpaid invoice'
           }
         >
           <span>

@@ -26,6 +26,8 @@ type Props = {
   onSync: (bill: Bill) => void;
   onResync: (bill: Bill) => void;
   onDelete: (bill: Bill) => void;
+  /** Overrides the bill number shown in the header (layout B uses invoice number + installment). */
+  displayId?: string;
 };
 
 function Section({ title, children, last }: { title: string; children: ReactNode; last?: boolean }) {
@@ -65,6 +67,7 @@ export function BillDetailDrawer({
   onSync,
   onResync,
   onDelete,
+  displayId,
 }: Props) {
   const calc = bill ? billBreakdown(bill) : null;
   return (
@@ -97,7 +100,7 @@ export function BillDetailDrawer({
           >
             <Box sx={{ minWidth: 0 }}>
               <Typography sx={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.02em', lineHeight: 1.2 }}>
-                {bill.id}
+                {displayId ?? bill.id}
               </Typography>
               <Typography sx={{ fontSize: 13, color: colors.ink600, mt: 0.5 }}>
                 {franchiseName(bill.franchiseId)} · {billCompanyLabel(bill, companyName)}
@@ -160,19 +163,19 @@ export function BillDetailDrawer({
               flexShrink: 0,
             }}
           >
-            <Tooltip title="Delete this bill and mark its invoices unprocessed">
+            <Tooltip title="Delete bill">
               <Button startIcon={<DeleteOutlineRounded />} onClick={() => onDelete(bill)} sx={{ ...deleteBtnSx, width: 'auto', height: 36, px: 1.5 }}>
                 Delete
               </Button>
             </Tooltip>
             {bill.status === 'pending' ? (
-              <Tooltip title="Send this bill to QuickBooks">
+              <Tooltip title="Sync to QuickBooks">
                 <Button variant="contained" startIcon={<SyncRounded />} onClick={() => onSync(bill)}>
                   Sync to QuickBooks
                 </Button>
               </Tooltip>
             ) : (
-              <Tooltip title="Send this bill to QuickBooks again">
+              <Tooltip title="Re-sync">
                 <Button variant="contained" startIcon={<SyncRounded />} onClick={() => onResync(bill)}>
                   Resync
                 </Button>

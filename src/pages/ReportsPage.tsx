@@ -215,25 +215,25 @@ export default function ReportsPage() {
               }}
             >
               <Kpi
-                hint="Gross amount on bills created in the selected period"
+                hint="Gross billed"
                 status="Total billed"
                 value={formatMoney(totals.billed)}
                 caption={filtered ? `${rows.length} of ${allRows.length} franchises` : `${totals.bills} bills · all franchises`}
               />
               <Kpi
-                hint="Royalty booked on bills created in the selected period"
+                hint="Royalty booked"
                 status="Royalty collected"
                 value={formatMoney(totals.royalty)}
                 caption="royalty"
               />
               <Kpi
-                hint="Payable on bills already synced to QuickBooks"
+                hint="Synced payable"
                 status="Bills paid"
                 value={formatMoney(totals.paid)}
                 caption={`${totals.synced}/${totals.bills} bills synced`}
               />
               <Kpi
-                hint="Payable on bills that are pending or failed to sync"
+                hint="Unsynced payable"
                 status="Outstanding"
                 value={formatMoney(totals.outstanding)}
                 caption="pending or failed"

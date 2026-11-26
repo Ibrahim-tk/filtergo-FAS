@@ -15,7 +15,6 @@ type Props = {
   companyName: string;
   breakdown: PayableBreakdown | null;
   canProcess: boolean;
-  onFeesChange: (next: { royaltyPct: number; feePct: number }) => void;
   onProcess: () => void;
   /** Opens the bill created from this invoice (Bills tab + bill drawer). */
   onOpenBill?: () => void;
@@ -30,7 +29,6 @@ export function InvoiceDetailDrawer({
   companyName,
   breakdown,
   canProcess,
-  onFeesChange,
   onProcess,
   onOpenBill,
   notice,
@@ -64,7 +62,6 @@ export function InvoiceDetailDrawer({
               companyName={companyName}
               breakdown={breakdown}
               canProcess={canProcess}
-              onFeesChange={onFeesChange}
               onProcess={onProcess}
               onClose={onClose}
               notice={

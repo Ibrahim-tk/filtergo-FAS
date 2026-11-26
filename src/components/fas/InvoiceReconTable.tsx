@@ -21,7 +21,7 @@ import SearchRounded from '@mui/icons-material/SearchRounded';
 import type { Bill, Franchise, Invoice } from '../../types/fas';
 import { TableCheckbox } from '../ui/TableCheckbox';
 import { StatusChip, type StatusTone } from '../ui/StatusChip';
-import { downloadCsv, formatDate, formatMoney, invoiceGross, round2, toCsv } from '../../utils/payable';
+import { downloadCsv, formatDateShort, formatMoney, invoiceGross, round2, toCsv } from '../../utils/payable';
 import { billInvoiceIds } from '../../utils/bills';
 import { colors, layout, radius } from '../../theme/tokens';
 import { filterSelectProps } from './filterSelect';
@@ -35,7 +35,7 @@ const COLUMNS: ColumnDef[] = [
   ...QBO_FIELDS.map((f) => ({ id: f.id, label: f.label, defaultVisible: !!f.defaultVisible })),
 ];
 /** Defaults read left to right the way a reconciler checks a payment. */
-const DEFAULT_ORDER = ['num', 'name', 'invoiceDate', 'amount', 'openBalance', STATUS_COL];
+const DEFAULT_ORDER = ['num', 'name', 'invoiceDate', 'amount', STATUS_COL];
 const INITIAL_ORDER = [...DEFAULT_ORDER, ...COLUMNS.map((c) => c.id).filter((id) => !DEFAULT_ORDER.includes(id))];
 const FIELD_BY_ID = new Map<string, QboField>(QBO_FIELDS.map((f) => [f.id, f]));
 
@@ -43,10 +43,10 @@ const FIELD_BY_ID = new Map<string, QboField>(QBO_FIELDS.map((f) => [f.id, f]));
 type ReconState = 'toBill' | 'partial' | 'unpaid' | 'billed';
 
 const STATE_META: Record<ReconState, { label: string; tone: StatusTone; hint: string }> = {
-  toBill: { label: 'To bill', tone: 'warning', hint: 'Paid by the customer, no bill yet' },
+  toBill: { label: 'To bill', tone: 'warning', hint: 'No bill yet' },
   partial: { label: 'Partly billed', tone: 'info', hint: 'Installments still to bill' },
-  unpaid: { label: 'Awaiting payment', tone: 'neutral', hint: 'Customer has not paid yet' },
-  billed: { label: 'Billed', tone: 'success', hint: 'Paid and fully billed' },
+  unpaid: { label: 'Awaiting payment', tone: 'neutral', hint: 'Customer unpaid' },
+  billed: { label: 'Billed', tone: 'success', hint: 'Fully billed' },
 };
 const ORDER: ReconState[] = ['toBill', 'partial', 'unpaid', 'billed'];
 
@@ -239,12 +239,12 @@ export function InvoiceReconTable({
           ))}
         </TextField>
         <Box sx={{ flex: 1 }} />
-        <Tooltip title="Add or remove QuickBooks fields as columns">
+        <Tooltip title="Columns">
           <Button variant="outlined" color="secondary" size="small" startIcon={<ViewColumnOutlined />} onClick={() => setCustomizeOpen(true)}>
             Customize
           </Button>
         </Tooltip>
-        <Tooltip title="Download the invoices in this view as CSV, with every QuickBooks field">
+        <Tooltip title="Export CSV">
           <Button variant="outlined" color="secondary" size="small" startIcon={<FileDownloadOutlined />} onClick={exportCsv}>
             Export
           </Button>
@@ -259,7 +259,7 @@ export function InvoiceReconTable({
             <TableHead>
               <TableRow>
                 <TableCell padding="checkbox" sx={headSx}>
-                  <Tooltip title="Select the paid invoices on this page that still need a bill">
+                  <Tooltip title="Select all to bill">
                     <span>
                       <TableCheckbox
                         indeterminate={someSelected && !allSelected}
@@ -328,7 +328,7 @@ export function InvoiceReconTable({
                             : f.kind === 'money'
                               ? formatMoney(Number(v))
                               : f.kind === 'date'
-                                ? formatDate(String(v))
+                                ? formatDateShort(String(v))
                                 : String(v)}
                         </TableCell>
                       );

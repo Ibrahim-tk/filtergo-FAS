@@ -19,8 +19,11 @@ export const colors = {
   ink500: '#AEAEB2', // disabled, placeholders
   ink400: '#D0CFD2', // hover borders
   line: '#E6E6E7', // borders, dividers
+  lineSoft: '#EEEEEF', // row rules inside a container: `line` 30% lighter
+  lineFaint: '#F4F4F5', // rules between rows of one group, so the group reads as one block
   surface: '#F5F5F6', // inactive stepper, muted fills
-  surfaceAlt: '#F6F6F8', // table header, hover rows
+  surfaceAlt: '#F6F6F8', // table header
+  rowHover: '#FAFAFA', // neutral grey behind a hovered table row
   paper: '#FFFFFF',
 
   // Status
@@ -30,6 +33,8 @@ export const colors = {
   amberSoft: '#FFFAEB',
   blue: '#175CD3',
   blueSoft: '#EFF8FF',
+  purple: '#7A5AF8',
+  purpleSoft: '#F4F3FF',
   greenText: '#067647',
   greenTextSoft: '#ECFDF3',
 } as const;

@@ -208,7 +208,7 @@ export function DataTable<T>({
         {toolbarActions}
         {!hideCustomize && (
           <>
-        <Tooltip title="Show, hide or reorder columns">
+        <Tooltip title="Columns">
           <Button
             variant="outlined"
             color="secondary"
@@ -223,7 +223,7 @@ export function DataTable<T>({
         )}
         {!hideExport && (
           <>
-        <Tooltip title={`Download the ${many} in this view as CSV`}>
+        <Tooltip title="Export CSV">
           <span>
             <Button
               variant="outlined"

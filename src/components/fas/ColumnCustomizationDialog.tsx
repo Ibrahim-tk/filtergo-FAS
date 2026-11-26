@@ -212,10 +212,10 @@ function ColumnCustomizationBody({
         }}
       >
         <Box sx={{ display: 'flex', gap: 1 }}>
-          <Button variant="outlined" color="secondary" onClick={onClose}>
+          <Button variant="text" color="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="contained" onClick={reset}>
+          <Button variant="outlined" color="secondary" onClick={reset} sx={{ bgcolor: 'common.white' }}>
             Reset
           </Button>
           <Button
@@ -226,7 +226,7 @@ function ColumnCustomizationBody({
               onClose();
             }}
           >
-            Apply to Columns
+            Apply changes
           </Button>
         </Box>
       </DialogActions>

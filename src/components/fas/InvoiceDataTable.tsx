@@ -301,7 +301,7 @@ export function InvoiceDataTable({
 
         {showFilters && (
           <>
-            <Tooltip title="Filter by payment: paid or unpaid" placement="top">
+            <Tooltip title="Payment status" placement="top">
               <TextField
                 select
                 size="small"
@@ -317,7 +317,7 @@ export function InvoiceDataTable({
                 <MenuItem value="unpaid">Unpaid</MenuItem>
               </TextField>
             </Tooltip>
-            <Tooltip title="Filter by processing: whether a bill has been created" placement="top">
+            <Tooltip title="Billing status" placement="top">
               <TextField
                 select
                 size="small"
@@ -338,7 +338,7 @@ export function InvoiceDataTable({
 
         <Box sx={{ flex: 1 }} />
 
-        <Tooltip title={showFilters ? 'Hide the filter dropdowns' : 'Show the filter dropdowns'}>
+        <Tooltip title={showFilters ? 'Hide filters' : 'Show filters'}>
           <Button
             variant="outlined"
             color="secondary"
@@ -349,7 +349,7 @@ export function InvoiceDataTable({
             {showFilters ? 'Hide Filters' : 'Show Filters'}
           </Button>
         </Tooltip>
-        <Tooltip title={`Sorted by ${INVOICE_COLUMNS.find((c) => c.id === sortKey)?.label ?? sortKey} (${sortDir === 'asc' ? 'ascending' : 'descending'}). Click to change.`}>
+        <Tooltip title={`Sort: ${INVOICE_COLUMNS.find((c) => c.id === sortKey)?.label ?? sortKey}`}>
           <Button
             variant="outlined"
             color="secondary"
@@ -360,7 +360,7 @@ export function InvoiceDataTable({
             Sort
           </Button>
         </Tooltip>
-        <Tooltip title="Show, hide or reorder columns">
+        <Tooltip title="Columns">
           <Button
             variant="outlined"
             color="secondary"
@@ -371,7 +371,7 @@ export function InvoiceDataTable({
             Customize
           </Button>
         </Tooltip>
-        <Tooltip title="Download the invoices in this view as CSV">
+        <Tooltip title="Export CSV">
           <Button
             variant="outlined"
             color="secondary"

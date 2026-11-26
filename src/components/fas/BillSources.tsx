@@ -6,7 +6,7 @@ import { BillInvoiceItems } from './BillInvoiceItems';
 export function billBreakdown(b: Bill): { breakdown: PayableBreakdown; royaltyPct: number; feePct: number } {
   const pct = (part: number) => (b.gross ? Math.round((part / b.gross) * 1000) / 10 : 0);
   return {
-    breakdown: { gross: b.gross, royalty: b.royalty, fees: b.fees, payable: b.amount },
+    breakdown: { gross: b.gross, royalty: b.royalty, fees: b.fees, service: b.service ?? 0, payable: b.amount },
     royaltyPct: pct(b.royalty),
     feePct: pct(b.fees),
   };

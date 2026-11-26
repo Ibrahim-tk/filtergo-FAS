@@ -95,7 +95,7 @@ export const QBO_FIELDS: QboField[] = [
   { id: 'netAmount', label: 'Net amount', kind: 'money', get: (inv) => round2(invoiceGross(inv) - tax(inv)) },
   { id: 'taxAmount', label: 'Tax amount', kind: 'money', get: tax },
   { id: 'taxableAmount', label: 'Taxable amount', kind: 'money', get: taxable },
-  { id: 'openBalance', label: 'Open balance', kind: 'money', defaultVisible: true, get: openBalance },
+  { id: 'openBalance', label: 'Open balance', kind: 'money', get: openBalance },
   { id: 'discount', label: 'Discount amount', kind: 'money', get: () => 0 },
   { id: 'voided', label: 'Voided', kind: 'text', get: () => 'No' },
   { id: 'arPaid', label: 'A/R paid', kind: 'text', get: (inv) => (inv.paidStatus === 'paid' ? 'Paid' : 'Unpaid') },

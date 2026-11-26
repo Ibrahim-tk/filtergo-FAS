@@ -11,13 +11,11 @@ import TableRow from '@mui/material/TableRow';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import CloseRounded from '@mui/icons-material/CloseRounded';
-import SyncRounded from '@mui/icons-material/SyncRounded';
 import type { Invoice } from '../../types/fas';
-import { formatDate, formatMoney, round2 } from '../../utils/payable';
-import { unbilledInstallments, type InvoiceGroup } from '../../utils/ledger';
-import { StatusChip } from '../ui/StatusChip';
+import { formatDateShort, formatMoney, round2 } from '../../utils/payable';
+import { billNumberFor, unbilledInstallments, type InvoiceGroup } from '../../utils/ledger';
 import { BillInvoiceItems } from './BillInvoiceItems';
-import { BILL_STATUS_META, GroupStatusChip } from './BillLedgerTable';
+import { GroupStatusChip } from './BillLedgerTable';
 import { colors } from '../../theme/tokens';
 
 type Props = {
@@ -28,7 +26,7 @@ type Props = {
   onClose: () => void;
   onOpenBill: (billId: string) => void;
   onOpenInvoice?: (invoiceId: string) => void;
-  onSyncMany: (billIds: string[]) => void;
+  onMarkPaid: (billIds: string[]) => void;
 };
 
 function Section({ title, children, last }: { title: string; children: ReactNode; last?: boolean }) {
@@ -87,10 +85,9 @@ export function InvoiceLedgerDrawer({
   onClose,
   onOpenBill,
   onOpenInvoice,
-  onSyncMany,
+  onMarkPaid,
 }: Props) {
   const invoices = g ? g.invoiceIds.map(getInvoice).filter((i): i is Invoice => !!i) : [];
-  const pendingIds = g ? g.bills.filter((b) => b.status === 'pending').map((b) => b.id) : [];
   const missing = g ? unbilledInstallments(g) : [];
   const each = g && missing.length ? round2(g.remaining.amount / missing.length) : 0;
 
@@ -144,12 +141,13 @@ export function InvoiceLedgerDrawer({
           <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
             <Section title="Reconciliation">
               <Row
-                label="Left to bill"
-                value={g.remaining.amount > 0.005 ? formatMoney(g.remaining.amount) : 'Billed in full'}
+                label="Outstanding"
+                value={g.remaining.amount > 0.005 ? formatMoney(g.remaining.amount) : 'Fully billed'}
                 strong
               />
               <Row label="Billed so far" value={`${formatMoney(g.billed.amount)} of ${formatMoney(g.plan.amount)}`} />
               {g.planned > 1 && <Row label="Installments" value={`${g.bills.length} of ${g.planned} billed`} />}
+              <Row label="Paid to franchise" value={g.paid && g.paidOn ? `Paid ${formatDateShort(g.paidOn)}` : 'Unpaid'} />
             </Section>
 
             <Section title="Calculation">
@@ -178,16 +176,14 @@ export function InvoiceLedgerDrawer({
                       <TableCell align="right" sx={headSx}>
                         Payable
                       </TableCell>
-                      <TableCell sx={headSx}>Status</TableCell>
-                      <TableCell sx={headSx}>Pay date</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
                     {g.bills.map((b) => (
                       <TableRow key={b.id} hover onClick={() => onOpenBill(b.id)} sx={{ cursor: 'pointer' }}>
                         {g.planned > 1 && <TableCell sx={cellSx}>{b.installment?.index ?? 1}</TableCell>}
-                        <TableCell sx={{ ...cellSx, color: colors.ink700, fontWeight: 500 }}>{b.id}</TableCell>
-                        <TableCell sx={cellSx}>{formatDate(b.billDate)}</TableCell>
+                        <TableCell sx={{ ...cellSx, color: colors.ink700, fontWeight: 500 }}>{billNumberFor(g.invoiceNumbers[0], b.installment?.index ?? 1)}</TableCell>
+                        <TableCell sx={cellSx}>{formatDateShort(b.billDate)}</TableCell>
                         <TableCell align="right" sx={cellSx}>
                           {formatMoney(b.gross)}
                         </TableCell>
@@ -197,14 +193,6 @@ export function InvoiceLedgerDrawer({
                         <TableCell align="right" sx={{ ...cellSx, fontWeight: 600 }}>
                           {formatMoney(b.amount)}
                         </TableCell>
-                        <TableCell sx={cellSx}>
-                          <Tooltip title={b.status === 'failed' ? b.errorMessage ?? '' : ''}>
-                            <span>
-                              <StatusChip tone={BILL_STATUS_META[b.status].tone} label={BILL_STATUS_META[b.status].label} />
-                            </span>
-                          </Tooltip>
-                        </TableCell>
-                        <TableCell sx={cellSx}>{b.payDate ? formatDate(b.payDate) : '—'}</TableCell>
                       </TableRow>
                     ))}
                     {missing.map((idx) => (
@@ -221,10 +209,6 @@ export function InvoiceLedgerDrawer({
                         <TableCell align="right" sx={{ ...cellSx, color: colors.ink500 }}>
                           {formatMoney(each)}
                         </TableCell>
-                        <TableCell sx={cellSx}>
-                          <StatusChip tone="neutral" label="Scheduled" />
-                        </TableCell>
-                        <TableCell sx={{ ...cellSx, color: colors.ink500 }}>—</TableCell>
                       </TableRow>
                     ))}
                     <TableRow sx={{ '& td': { borderBottom: 'none', fontWeight: 700, color: colors.ink, pt: 1.5 } }}>
@@ -240,23 +224,17 @@ export function InvoiceLedgerDrawer({
                       <TableCell align="right" sx={{ ...cellSx, fontSize: 15 }}>
                         {formatMoney(g.plan.amount)}
                       </TableCell>
-                      <TableCell sx={cellSx} colSpan={2} />
                     </TableRow>
                   </TableBody>
                 </Table>
               </Box>
-              {g.bills.some((b) => b.status === 'failed' && b.errorMessage) && (
-                <Typography sx={{ fontSize: 12, color: colors.red, mt: 1 }}>
-                  {g.bills.find((b) => b.status === 'failed')?.errorMessage}
-                </Typography>
-              )}
             </Section>
 
             <Section title={invoices.length > 1 ? 'Source invoices' : 'Source invoice'} last>
               {invoices.length === 1 && (
                 <Box sx={{ mb: 1.5 }}>
-                  <Row label="Invoice date" value={formatDate(invoices[0].invoiceDate)} />
-                  <Row label="Due date" value={formatDate(invoices[0].dueDate)} />
+                  <Row label="Invoice date" value={formatDateShort(invoices[0].invoiceDate)} />
+                  <Row label="Due date" value={formatDateShort(invoices[0].dueDate)} />
                   <Row label="Source" value={invoices[0].source} />
                 </Box>
               )}
@@ -264,10 +242,10 @@ export function InvoiceLedgerDrawer({
             </Section>
           </Box>
 
-          {pendingIds.length > 0 && (
+          {!g.paid && (
             <Box sx={{ px: 2.5, py: 1.5, borderTop: `1px solid ${colors.line}`, display: 'flex', justifyContent: 'flex-end', flexShrink: 0 }}>
-              <Button variant="contained" startIcon={<SyncRounded />} onClick={() => onSyncMany(pendingIds)}>
-                Sync {pendingIds.length} pending to QuickBooks
+              <Button variant="contained" onClick={() => onMarkPaid(g.unpaidIds)}>
+                Mark as paid
               </Button>
             </Box>
           )}

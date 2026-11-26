@@ -205,7 +205,7 @@ export default function SettingsPage() {
                     <EditOutlined sx={{ fontSize: 16 }} />
                   </IconButton>
                 </Tooltip>
-                <Tooltip title="Remove override — franchise goes back to brand-wide defaults">
+                <Tooltip title="Remove override">
                   <IconButton
                     size="small"
                     aria-label={`Remove ${franchiseName(o.franchiseId)} override`}
@@ -255,25 +255,25 @@ export default function SettingsPage() {
                   }}
                 >
                   <Kpi
-                    hint="Royalty applied to every franchise without an override"
+                    hint="Default royalty"
                     status="Default royalty"
                     value={`${feeDefaults.royaltyPct}%`}
                     caption="brand-wide"
                   />
                   <Kpi
-                    hint="Territory fee applied to every franchise without an override"
+                    hint="Default territory fee"
                     status="Default territory fee"
                     value={`${feeDefaults.feePct}%`}
                     caption="brand-wide"
                   />
                   <Kpi
-                    hint="Franchises with their own royalty or territory fee"
+                    hint="Custom rates"
                     status="Overrides"
                     value={String(feeOverrides.length)}
                     caption={feeOverrides.length === 1 ? 'franchise' : 'franchises'}
                   />
                   <Kpi
-                    hint="Franchises using the brand-wide defaults"
+                    hint="Default rates"
                     status="On defaults"
                     value={String(onDefaults)}
                     caption={`of ${franchises.length} franchises`}
@@ -340,7 +340,7 @@ export default function SettingsPage() {
                   hideCustomize
                   toolbarActions={
                     !readOnly && (
-                      <Tooltip title="Give a franchise its own royalty or territory fee">
+                      <Tooltip title="Add override">
                         <Button
                           variant="outlined"
                           color="secondary"
@@ -415,7 +415,7 @@ export default function SettingsPage() {
               )}
               <Section title="Access control" last>
                 <Row label="Admin" hint="Prototype toggle.">
-                  <Tooltip title={isAdmin ? 'Turn off admin privileges' : 'Turn on admin privileges'}>
+                  <Tooltip title={isAdmin ? 'Turn off admin' : 'Turn on admin'}>
                     <Switch
                       checked={isAdmin}
                       onChange={(_, v) => setIsAdmin(v)}

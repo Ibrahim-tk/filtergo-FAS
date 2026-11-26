@@ -1,7 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import ButtonBase from '@mui/material/ButtonBase';
+import Menu from '@mui/material/Menu';
+import MenuItem from '@mui/material/MenuItem';
 import Drawer from '@mui/material/Drawer';
 import IconButton from '@mui/material/IconButton';
 import Snackbar from '@mui/material/Snackbar';
@@ -10,10 +13,7 @@ import Tabs from '@mui/material/Tabs';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import CloseRounded from '@mui/icons-material/CloseRounded';
-import AccountBalanceOutlined from '@mui/icons-material/AccountBalanceOutlined';
-import PaidOutlined from '@mui/icons-material/PaidOutlined';
-import PendingActionsRounded from '@mui/icons-material/PendingActionsRounded';
-import ReceiptLongOutlined from '@mui/icons-material/ReceiptLongOutlined';
+import KeyboardArrowDownRounded from '@mui/icons-material/KeyboardArrowDownRounded';
 import { AppShell } from '../components/layout/AppShell';
 import { EmptyState } from '../components/ui/blocks';
 import {
@@ -37,18 +37,22 @@ import { useFas } from '../state/fasStore';
 import { billInvoiceIds, nextBillId } from '../utils/bills';
 import { BillDetailDrawer } from '../components/fas/BillDetailDrawer';
 import { PeriodMenu } from '../components/fas/PeriodMenu';
+import { InvoiceSheetTable } from '../components/fas/InvoiceSheetTable';
+import { BillSheetTable } from '../components/fas/BillSheetTable';
 import { BillInvoiceItems, itemize } from '../components/fas/BillInvoiceItems';
 import type { Bill, PeriodKey } from '../types/fas';
-import { computePayable, formatMoney, invoiceGross } from '../utils/payable';
-import { colors } from '../theme/tokens';
+import { computePayable, formatDateShort, formatMoney, invoiceGross, round2 } from '../utils/payable';
+import { colors, radius } from '../theme/tokens';
 import { LayoutVariantToggle, useLayoutVariant } from '../components/layout/LayoutVariantToggle';
 import { BillLedgerTable } from '../components/fas/BillLedgerTable';
 import { Kpi } from '../components/fas/FranchiseDetailHeader';
 import { InvoiceLedgerDrawer } from '../components/fas/InvoiceLedgerDrawer';
 import { InvoiceReconTable } from '../components/fas/InvoiceReconTable';
-import { buildInvoiceGroups } from '../utils/ledger';
+import { billNumber, buildInvoiceGroups, invoiceNumberCompact } from '../utils/ledger';
 
 type WorkspaceTab = 'invoices' | 'bills' | 'reports';
+type StatPeriod = 'all' | 'today' | 'week' | 'month';
+const STAT_PERIOD_LABEL: Record<StatPeriod, string> = { all: 'All', today: 'Today', week: 'This week', month: 'This month' };
 
 export default function InvoicesPage() {
   const {
@@ -59,17 +63,19 @@ export default function InvoicesPage() {
     franchiseName,
     companyName,
     getInvoice,
-    updateInvoiceFees,
     processInvoices,
     processInvoicesCombined,
     syncBills,
     resyncBill,
+    markBillsPaid,
     deleteBill,
     upsertFeeOverride,
   } = useFas();
 
   const [searchParams] = useSearchParams();
   const [variant] = useLayoutVariant();
+  /** Layouts B and C share the ledger UI; C adds shared-bill links in the Bills table. */
+  const ledger = variant !== 'a';
   const paidParam = searchParams.get('paid');
   const initialPaidFilter = paidParam === 'paid' || paidParam === 'unpaid' ? paidParam : '';
 
@@ -114,22 +120,50 @@ export default function InvoicesPage() {
   }, [franchiseInvoices]);
 
   // Layout B header: the dashboard's bill stats, scoped to this franchise (all time).
-  const billKpis = useMemo(() => {
-    const pending = franchiseBills.filter((b) => b.status !== 'synced');
-    const failed = pending.filter((b) => b.status === 'failed').length;
-    return {
-      pendingCount: pending.length,
-      pendingCaption: failed ? `${pending.length - failed} awaiting sync · ${failed} failed` : 'bills awaiting sync',
-      royaltyCount: franchiseBills.length,
-      royaltyAmount: franchiseBills.reduce((s, b) => s + b.royalty, 0),
-    };
-  }, [franchiseBills]);
+
+  /**
+   * Layout B header: the franchise's money for today, this week (Monday to Sunday) or this month.
+   * Gross receipts − Royalty & fees = Payable to franchise; Bills paid is what went out in the period.
+   */
+  const [statPeriod, setStatPeriod] = useState<StatPeriod>('week');
+  const weekKpis = useMemo(() => {
+    const now = new Date();
+    const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    // Layout B's switch has no "All"; it falls back to this week.
+    const period: StatPeriod = variant === 'b' && statPeriod === 'all' ? 'week' : statPeriod;
+    const [start, end] =
+      period === 'all'
+        ? [new Date(0), new Date(8640000000000000)]
+        : period === 'today'
+        ? [now, now]
+        : period === 'month'
+          ? [new Date(now.getFullYear(), now.getMonth(), 1), new Date(now.getFullYear(), now.getMonth() + 1, 0)]
+          : (() => {
+              const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7));
+              return [monday, new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6)];
+            })();
+    const from = iso(start);
+    const to = iso(end);
+    const inWeek = (d?: string) => !!d && d >= from && d <= to;
+    let receipts = 0;
+    let retained = 0;
+    for (const inv of franchiseInvoices) {
+      if (inv.paidStatus !== 'paid' || !inWeek(inv.invoiceDate)) continue;
+      const p = computePayable(invoiceGross(inv), inv.royaltyPct, inv.feePct, inv.serviceFeePct);
+      receipts += p.gross;
+      retained += p.royalty + p.fees + p.service;
+    }
+    const paidOut = franchiseBills.filter((b) => inWeek(b.paidOn)).reduce((t, b) => t + b.amount, 0);
+    const range =
+      period === 'all' ? 'All time' : from === to ? formatDateShort(from) : `${formatDateShort(from)} – ${formatDateShort(to)}`;
+    return { receipts: round2(receipts), retained: round2(retained), payable: round2(receipts - retained), paidOut: round2(paidOut), range };
+  }, [franchiseInvoices, franchiseBills, statPeriod, variant]);
 
   const drawerInvoice = drawerInvoiceId
     ? invoices.find((i) => i.id === drawerInvoiceId)
     : undefined;
   const drawerBreakdown = drawerInvoice
-    ? computePayable(invoiceGross(drawerInvoice), drawerInvoice.royaltyPct, drawerInvoice.feePct)
+    ? computePayable(invoiceGross(drawerInvoice), drawerInvoice.royaltyPct, drawerInvoice.feePct, drawerInvoice.serviceFeePct)
     : null;
   const canProcessDrawer =
     !!drawerInvoice &&
@@ -143,6 +177,36 @@ export default function InvoicesPage() {
   const drawerBill = drawerBillId ? bills.find((b) => b.id === drawerBillId) : undefined;
 
   const invoiceNumberOf = (id: string) => getInvoice(id)?.number ?? id;
+  const grossOf = useCallback((id: string) => {
+    const inv = getInvoice(id);
+    return inv ? invoiceGross(inv) : 0;
+  }, [getInvoice]);
+  // Layout C bill sheet lookups (stable so its line list only rebuilds when data changes).
+  const sheetInvoiceNumber = useCallback((id: string) => invoiceNumberCompact(getInvoice(id)?.number ?? id), [getInvoice]);
+  // Layout C shows invoice numbers without the underscore (INV325123); the data keeps its own.
+  const compactIds = variant === 'c';
+  const drawerInvoiceShown = drawerInvoice && compactIds ? { ...drawerInvoice, number: invoiceNumberCompact(drawerInvoice.number) } : drawerInvoice;
+  const getInvoiceShown = useCallback(
+    (id: string) => {
+      const inv = getInvoice(id);
+      return inv && compactIds ? { ...inv, number: invoiceNumberCompact(inv.number) } : inv;
+    },
+    [getInvoice, compactIds],
+  );
+  const sheetInvoiceCompany = useCallback(
+    (id: string) => {
+      const inv = getInvoice(id);
+      return inv ? companyName(inv.companyId) : '';
+    },
+    [getInvoice, companyName],
+  );
+  const sheetInvoiceRates = useCallback(
+    (id: string) => {
+      const inv = getInvoice(id);
+      return { royaltyPct: inv?.royaltyPct ?? 0, feePct: inv?.feePct ?? 0, serviceFeePct: inv?.serviceFeePct ?? 0 };
+    },
+    [getInvoice],
+  );
   const drawerGroup = useMemo(
     () =>
       drawerGroupKey
@@ -229,6 +293,13 @@ export default function InvoicesPage() {
     return b && b.status !== 'synced';
   });
 
+  const markPaid = (ids: string[]) => {
+    markBillsPaid(ids);
+    setBillSelectedIds(new Set());
+    setToast('Marked as paid to the franchise');
+  };
+  const unpaidSelected = [...billSelectedIds].filter((id) => !bills.find((b) => b.id === id)?.paidOn);
+
   const bulkCount =
     tab === 'invoices' ? invoiceSelectedIds.size : tab === 'bills' ? billSelectedIds.size : 0;
 
@@ -237,8 +308,13 @@ export default function InvoicesPage() {
       <WorkspaceShell>
         <WorkspaceHeader
           title="Invoices"
-          subtitle="Select a franchise, review invoices and bills, then process payables."
+          subtitle={variant === 'c' ? undefined : 'Select a franchise, review invoices and bills, then process payables.'}
+          gutter={variant === 'c' ? 4 : undefined}
           actions={
+            <>
+            {variant === 'c' && (
+              <StatPeriodSegments value={statPeriod} onChange={setStatPeriod} />
+            )}
             <InvoicesPageActions
               hideActions
               franchises={franchises}
@@ -249,6 +325,7 @@ export default function InvoicesPage() {
               onProcessAll={(ids) => setBulkConfirm({ type: 'process', ids })}
               onSyncAll={(ids) => setBulkConfirm({ type: 'sync', ids })}
             />
+            </>
           }
         />
 
@@ -306,49 +383,59 @@ export default function InvoicesPage() {
                     companyNames={companies.filter((c) => c.franchiseId === selectedFranchise.id).map((c) => c.name)}
                     invoices={franchiseInvoices}
                     bills={franchiseBills}
+                    showRates={ledger}
+                    flushStats={variant === 'c'}
+                    gutter={variant === 'c' ? 4 : undefined}
+                    statsHeader={
+                      variant === 'b' ? <StatPeriodMenu value={statPeriod} onChange={setStatPeriod} /> : undefined
+                    }
                     statCells={
-                      variant === 'b'
+                      ledger
                         ? [
                             <Kpi
-                              key="paid"
-                              hint="Invoices from this franchise that the customer has paid"
-                              status="Paid"
-                              icon={<PaidOutlined sx={{ color: colors.greenText }} />}
-                              value={String(kpis.paidCount)}
+                              key="receipts"
+                              dotColumn={variant === 'c' ? colors.blue : undefined}
+                              hint={weekKpis.range}
+                              card={variant === 'b'}
+                              status="Gross receipts"
+                              value={formatMoney(weekKpis.receipts)}
                             />,
                             <Kpi
-                              key="pending"
-                              hint={`Bills for this franchise not yet in QuickBooks: ${billKpis.pendingCaption}`}
-                              status="Pending bill approvals"
-                              icon={<PendingActionsRounded sx={{ color: colors.amber }} />}
-                              value={String(billKpis.pendingCount)}
+                              key="retained"
+                              dotColumn={variant === 'c' ? colors.purple : undefined}
+                              hint={weekKpis.range}
+                              card={variant === 'b'}
+                              status="Royalty & fees"
+                              value={formatMoney(weekKpis.retained)}
                             />,
                             <Kpi
-                              key="royalty"
-                              hint="Bills created for this franchise, each booking royalty"
-                              status="Royalty booked"
-                              icon={<ReceiptLongOutlined sx={{ color: colors.ink600 }} />}
-                              value={String(billKpis.royaltyCount)}
+                              key="payable"
+                              dotColumn={variant === 'c' ? colors.amber : undefined}
+                              hint={weekKpis.range}
+                              card={variant === 'b'}
+                              status="Payable to franchise"
+                              value={formatMoney(weekKpis.payable)}
                             />,
                             <Kpi
-                              key="amount"
-                              hint="Total royalty booked on this franchise's bills"
-                              status="Booked amount"
-                              icon={<AccountBalanceOutlined sx={{ color: colors.ink600 }} />}
-                              value={formatMoney(billKpis.royaltyAmount)}
+                              key="paidout"
+                              dotColumn={variant === 'c' ? colors.green : undefined}
+                              hint={weekKpis.range}
+                              card={variant === 'b'}
+                              status="Bills paid"
+                              value={formatMoney(weekKpis.paidOut)}
                             />,
                           ]
                         : undefined
                     }
-                    onApplyCharges={({ royaltyPct, feePct }) => {
-                      upsertFeeOverride({ franchiseId: selectedFranchise.id, royaltyPct, feePct });
+                    onApplyCharges={({ royaltyPct, feePct, serviceFeePct }) => {
+                      upsertFeeOverride({ franchiseId: selectedFranchise.id, royaltyPct, feePct, serviceFeePct });
                       setToast(`Service charges updated for ${selectedFranchise.name}`);
                     }}
                   />
 
                   <Box
                     sx={{
-                      px: 2.5,
+                      px: variant === 'c' ? 4 : 2.5,
                       borderBottom: `1px solid ${colors.line}`,
                       flexShrink: 0,
                       bgcolor: colors.paper,
@@ -395,6 +482,20 @@ export default function InvoicesPage() {
                   </Box>
 
                   <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+                    {tab === 'invoices' && variant === 'c' && (
+                      <InvoiceSheetTable
+                        key={selectedFranchise.id}
+                        invoices={franchiseInvoices}
+                        bills={franchiseBills}
+                        companyName={companyName}
+                        selectedIds={invoiceSelectedIds}
+                        onToggleSelect={toggleInvoiceSelect}
+                        onToggleSelectAll={toggleInvoiceSelectAll}
+                        onRowClick={(id) => setDrawerInvoiceId(id)}
+                        activeId={drawerInvoiceId}
+                      />
+                    )}
+
                     {tab === 'invoices' && variant === 'b' && (
                       <InvoiceReconTable
                         key={selectedFranchise.id}
@@ -423,6 +524,29 @@ export default function InvoicesPage() {
                       />
                     )}
 
+                    {tab === 'bills' && variant === 'c' && (
+                      <BillSheetTable
+                        key={selectedFranchise.id}
+                        bills={franchiseBills}
+                        invoiceNumber={sheetInvoiceNumber}
+                        invoiceCompany={sheetInvoiceCompany}
+                        invoiceGross={grossOf}
+                        invoiceRates={sheetInvoiceRates}
+                        selectedIds={billSelectedIds}
+                        onToggleSelect={toggleBillSelect}
+                        onToggleSelectAll={toggleBillSelectAll}
+                        onRowClick={(id) => {
+                          setDrawerInvoiceId(null);
+                          setDrawerBillId(id);
+                        }}
+                        onOpenInvoice={(id) => {
+                          setDrawerBillId(null);
+                          setDrawerInvoiceId(id);
+                        }}
+                        activeId={drawerBillId}
+                      />
+                    )}
+
                     {tab === 'bills' && variant === 'b' && (
                       <BillLedgerTable
                         key={selectedFranchise.id}
@@ -436,10 +560,8 @@ export default function InvoicesPage() {
                         onOpenGroup={(key) => setDrawerGroupKey(key)}
                         activeId={drawerBillId}
                         activeGroupKey={drawerGroupKey}
-                        onSyncMany={(ids) => {
-                          syncBills(ids);
-                          setToast(`Sync attempted for ${ids.length} bill${ids.length === 1 ? '' : 's'}`);
-                        }}
+                        onMarkPaid={markPaid}
+                        invoiceGross={grossOf}
                       />
                     )}
 
@@ -491,14 +613,11 @@ export default function InvoicesPage() {
       <InvoiceDetailDrawer
         open={!!drawerInvoice}
         onClose={() => setDrawerInvoiceId(null)}
-        invoice={drawerInvoice}
+        invoice={drawerInvoiceShown}
         franchiseName={drawerInvoice ? franchiseName(drawerInvoice.franchiseId) : ''}
         companyName={drawerInvoice ? companyName(drawerInvoice.companyId) : ''}
         breakdown={drawerBreakdown}
         canProcess={canProcessDrawer}
-        onFeesChange={({ royaltyPct, feePct }) => {
-          if (drawerInvoice) updateInvoiceFees(drawerInvoice.id, royaltyPct, feePct);
-        }}
         onProcess={() => {
           if (drawerInvoice) processIds([drawerInvoice.id]);
         }}
@@ -517,18 +636,16 @@ export default function InvoicesPage() {
           setTab('invoices');
           setDrawerInvoiceId(id);
         }}
-        onSyncMany={(ids) => {
-          syncBills(ids);
-          setToast(`Sync attempted for ${ids.length} bill${ids.length === 1 ? '' : 's'}`);
-        }}
+        onMarkPaid={markPaid}
       />
 
       <BillDetailDrawer
         bill={drawerBill}
+        displayId={ledger && drawerBill ? billNumber(drawerBill, invoiceNumberOf, variant === 'c' ? 'compact' : 'underscore') : undefined}
         onClose={() => setDrawerBillId(null)}
         franchiseName={franchiseName}
         companyName={companyName}
-        getInvoice={getInvoice}
+        getInvoice={getInvoiceShown}
         onOpenInvoice={(id) => {
           setDrawerBillId(null);
           setTab('invoices');
@@ -546,7 +663,11 @@ export default function InvoicesPage() {
         selectedCount={bulkCount}
         label={tab === 'bills' ? 'bills selected' : 'invoices selected'}
         actions={
-          tab === 'bills' ? (
+          tab === 'bills' && ledger ? (
+            <Button variant="contained" disabled={!unpaidSelected.length} onClick={() => markPaid(unpaidSelected)}>
+              Mark as paid
+            </Button>
+          ) : tab === 'bills' ? (
             <Button
               variant="contained"
               disabled={!syncable.length}
@@ -560,7 +681,7 @@ export default function InvoicesPage() {
             </Button>
           ) : (
             <Box sx={{ display: 'flex', gap: 1 }}>
-              <Tooltip title="Create a separate bill for each selected invoice">
+              <Tooltip title="One bill per invoice">
                 <span>
                   <Button
                     variant="outlined"
@@ -572,7 +693,7 @@ export default function InvoicesPage() {
                   </Button>
                 </span>
               </Tooltip>
-              <Tooltip title="Review the selected invoices and create one bill for this franchise">
+              <Tooltip title="One combined bill">
                 <span>
                   <Button
                     variant="contained"
@@ -755,4 +876,79 @@ export default function InvoicesPage() {
   );
 }
 
+/** Layout C: segmented period switch beside Export; the selected segment takes the accent green. */
+function StatPeriodSegments({ value, onChange }: { value: StatPeriod; onChange: (p: StatPeriod) => void }) {
+  return (
+    <Box
+      role="radiogroup"
+      aria-label="Period"
+      sx={{
+        display: 'flex',
+        height: 36,
+        p: '3px',
+        gap: '2px',
+        borderRadius: `${radius.md}px`,
+        border: `1px solid ${colors.line}`,
+        bgcolor: colors.paper,
+      }}
+    >
+      {(Object.keys(STAT_PERIOD_LABEL) as StatPeriod[]).map((p) => {
+        const on = p === value;
+        return (
+          <ButtonBase
+            key={p}
+            role="radio"
+            aria-checked={on}
+            onClick={() => onChange(p)}
+            sx={{
+              px: 1.5,
+              borderRadius: `${radius.sm}px`,
+              fontSize: 13,
+              fontWeight: 600,
+              fontFamily: 'inherit',
+              whiteSpace: 'nowrap',
+              color: on ? colors.paper : colors.ink600,
+              bgcolor: on ? colors.green : 'transparent',
+              transition: 'background-color 120ms ease, color 120ms ease',
+              '&:hover': { color: on ? colors.paper : colors.ink, bgcolor: on ? colors.green : colors.surface },
+            }}
+          >
+            {STAT_PERIOD_LABEL[p]}
+          </ButtonBase>
+        );
+      })}
+    </Box>
+  );
+}
 
+/** Plain-text period switch above the layout B stat cards. */
+function StatPeriodMenu({ value, onChange }: { value: StatPeriod; onChange: (p: StatPeriod) => void }) {
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  return (
+    <>
+      <ButtonBase
+        onClick={(e) => setAnchor(e.currentTarget)}
+        aria-haspopup="menu"
+        sx={{ gap: 0.25, fontSize: 13, fontWeight: 600, color: colors.ink, borderRadius: `${radius.sm}px`, px: 0.5, ml: -0.5, py: 0.25 }}
+      >
+        {STAT_PERIOD_LABEL[value]}
+        <KeyboardArrowDownRounded sx={{ fontSize: 18, color: colors.ink600 }} />
+      </ButtonBase>
+      <Menu anchorEl={anchor} open={!!anchor} onClose={() => setAnchor(null)}>
+        {(Object.keys(STAT_PERIOD_LABEL) as StatPeriod[]).map((p) => (
+          <MenuItem
+            key={p}
+            selected={p === value}
+            onClick={() => {
+              onChange(p);
+              setAnchor(null);
+            }}
+            sx={{ fontSize: 13 }}
+          >
+            {STAT_PERIOD_LABEL[p]}
+          </MenuItem>
+        ))}
+      </Menu>
+    </>
+  );
+}

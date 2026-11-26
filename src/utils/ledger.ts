@@ -24,6 +24,11 @@ export type InvoiceGroup = {
   counts: Record<BillStatus, number>;
   lastBillDate: string;
   lastPayDate?: string;
+  /** Franchise paid out for every bill raised so far (set per invoice). */
+  paid: boolean;
+  paidOn?: string;
+  /** Bills the franchise hasn't been paid for yet. */
+  unpaidIds: string[];
 };
 
 const ZERO: Totals = { gross: 0, royalty: 0, fees: 0, amount: 0 };
@@ -82,8 +87,29 @@ export function buildInvoiceGroups(
       counts,
       lastBillDate: sorted.map((b) => b.billDate).sort().at(-1) ?? first.billDate,
       lastPayDate: payDates.at(-1),
+      paid: sorted.every((b) => !!b.paidOn),
+      paidOn: sorted.map((b) => b.paidOn).filter((d): d is string => !!d).sort().at(-1),
+      unpaidIds: sorted.filter((b) => !b.paidOn).map((b) => b.id),
     };
   });
+}
+
+/** Layout B bill number from an invoice number and installment: INV_637475, 2 → BILL_637475_2. */
+/** `underscore`: BILL_989283_2 (layout B). `compact`: BILL989283-2, a dash only before the installment (layout C). */
+export type BillNumberStyle = 'underscore' | 'compact';
+
+/** Layout C display: INV_325123 → INV325123. */
+export function invoiceNumberCompact(n: string): string {
+  return n.replace(/^INV_/, 'INV');
+}
+
+export function billNumberFor(invoiceNumber: string, index: number, style: BillNumberStyle = 'underscore'): string {
+  const digits = invoiceNumber.replace(/^INV_?/, '');
+  return style === 'compact' ? `BILL${digits}-${index}` : `BILL_${digits}_${index}`;
+}
+
+export function billNumber(b: Bill, invoiceNumber: (id: string) => string, style: BillNumberStyle = 'underscore'): string {
+  return billNumberFor(invoiceNumber(billInvoiceIds(b)[0]), b.installment?.index ?? 1, style);
 }
 
 /** Installment numbers in the plan that have no bill yet. */
