@@ -14,6 +14,9 @@ export const colors = {
   // Neutrals (ink → paper)
   ink: '#262527', // primary text, sidebar background
   ink800: '#444446', // section titles, sidebar borders
+  inkCell: '#374151', // medium-weight table keys
+  gray900: '#111827', // invoice # links in the bills register
+  gray500: '#6B7280', // bill date cells
   ink700: '#6A6A70', // secondary text, icons
   ink600: '#86868B', // labels, muted text
   ink500: '#AEAEB2', // disabled, placeholders
@@ -24,6 +27,7 @@ export const colors = {
   surface: '#F5F5F6', // inactive stepper, muted fills
   surfaceAlt: '#F6F6F8', // table header
   rowHover: '#FAFAFA', // neutral grey behind a hovered table row
+  totalFill: '#FAFAFA', // background of total lines in bills and tables
   paper: '#FFFFFF',
 
   // Status

@@ -35,6 +35,9 @@ export type SheetColumn<T> = {
   render?: (row: T) => ReactNode;
   /** Bold, ink-coloured text (identifiers and key amounts). */
   strong?: boolean;
+  /** Overrides the cell font weight and colour (pinned columns too). */
+  weight?: number;
+  color?: string;
 };
 
 type Selection<T> = {
@@ -204,8 +207,8 @@ export function SheetTable<T>({
     align: c.money ? ('right' as const) : ('left' as const),
     sx: {
       ...(c.money && numSx),
-      color: c.strong ? colors.ink : colors.ink700,
-      fontWeight: c.strong ? 600 : 400,
+      color: c.color ?? (c.strong ? colors.ink : colors.ink700),
+      fontWeight: c.weight ?? (c.strong ? 600 : 400),
       ...(c.value(r) === undefined && !c.render && { color: colors.ink500 }),
     },
   });
@@ -301,7 +304,8 @@ export function SheetTable<T>({
                       // Frozen cells carry their own background, so they follow the row state.
                       '&:hover > td.pin': { bgcolor: colors.rowHover },
                       '&.Mui-selected, &.Mui-selected:hover': { bgcolor: colors.greenSoft },
-                      '&.Mui-selected > td.pin': { bgcolor: colors.greenSoft },
+                      // greenSoft is translucent: paint it over white so scrolled cells don't show through frozen ones.
+                      '&.Mui-selected > td.pin': { background: `linear-gradient(${colors.greenSoft}, ${colors.greenSoft}) ${colors.paper}` },
                     }}
                   >
                     {selection && (
@@ -317,7 +321,7 @@ export function SheetTable<T>({
                           className="pin"
                           align={p.align}
                           // Frozen columns always read in black; only bold follows `strong`.
-                          sx={{ ...cellSx, ...p.sx, color: colors.ink, ...pinSx(i, 'body'), overflow: 'hidden', textOverflow: 'ellipsis' }}
+                          sx={{ ...cellSx, ...p.sx, color: c.color ?? colors.ink, ...pinSx(i, 'body'), overflow: 'hidden', textOverflow: 'ellipsis' }}
                         >
                           {fmt(c, r)}
                         </TableCell>

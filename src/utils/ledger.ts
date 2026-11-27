@@ -95,17 +95,18 @@ export function buildInvoiceGroups(
 }
 
 /** Layout B bill number from an invoice number and installment: INV_637475, 2 → BILL_637475_2. */
-/** `underscore`: BILL_989283_2 (layout B). `compact`: BILL989283-2, a dash only before the installment (layout C). */
+/** `underscore`: BILL_989283_2 (layout B). `compact`: B989283-2, a dash only before the installment (layout C). */
 export type BillNumberStyle = 'underscore' | 'compact';
 
-/** Layout C display: INV_325123 → INV325123. */
+/** Layout C display: INV_325123 → I325123. */
 export function invoiceNumberCompact(n: string): string {
-  return n.replace(/^INV_/, 'INV');
+  return n.replace(/^INV_?/, 'I');
 }
 
 export function billNumberFor(invoiceNumber: string, index: number, style: BillNumberStyle = 'underscore'): string {
-  const digits = invoiceNumber.replace(/^INV_?/, '');
-  return style === 'compact' ? `BILL${digits}-${index}` : `BILL_${digits}_${index}`;
+  // Accepts the raw (INV_325123) or compact (I325123) invoice number.
+  const digits = invoiceNumber.replace(/^(?:INV_?|I)/, '');
+  return style === 'compact' ? `B${digits}-${index}` : `BILL_${digits}_${index}`;
 }
 
 export function billNumber(b: Bill, invoiceNumber: (id: string) => string, style: BillNumberStyle = 'underscore'): string {

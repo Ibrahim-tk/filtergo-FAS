@@ -201,13 +201,13 @@ export function BillLedgerTable({
   const totalLeft = useMemo(() => round2(filtered.reduce((s, g) => s + g.remaining.amount, 0)), [filtered]);
 
   const exportCsv = () => {
-    const headers = ['Invoice #', 'Company', 'Bill ID', 'Installment', 'Bill date', 'Gross', 'Royalty', 'Fees', 'Payable', 'Status', 'Paid on'];
+    const headers = ['Invoice #', 'Company', 'Bill ID', 'Bill', 'Bill date', 'Gross', 'Royalty', 'Fees', 'Payable', 'Status', 'Paid on'];
     const rows = filtered.flatMap((g) =>
       g.bills.map((b) => [
         g.invoiceNumbers.join('; '),
         g.companyNames.join('; '),
         billNumber(b, invoiceNumber),
-        g.planned > 1 ? `${b.installment?.index ?? 1} of ${g.planned}` : '',
+        g.planned > 1 ? `${b.installment?.index ?? 1}/${g.planned}` : '',
         b.billDate,
         b.gross,
         b.royalty,

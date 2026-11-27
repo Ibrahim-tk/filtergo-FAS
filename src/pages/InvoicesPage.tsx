@@ -12,6 +12,8 @@ import Tab from '@mui/material/Tab';
 import Tabs from '@mui/material/Tabs';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
+import FirstPageRounded from '@mui/icons-material/FirstPageRounded';
+import LastPageRounded from '@mui/icons-material/LastPageRounded';
 import CloseRounded from '@mui/icons-material/CloseRounded';
 import KeyboardArrowDownRounded from '@mui/icons-material/KeyboardArrowDownRounded';
 import { AppShell } from '../components/layout/AppShell';
@@ -36,6 +38,11 @@ import {
 import { useFas } from '../state/fasStore';
 import { billInvoiceIds, nextBillId } from '../utils/bills';
 import { BillDetailDrawer } from '../components/fas/BillDetailDrawer';
+import { ApproveBillDialog } from '../components/fas/ApproveBillDialog';
+import { ApproveBillsDialog } from '../components/fas/ApproveBillsDialog';
+import { BillReviewDrawer } from '../components/fas/BillReviewDrawer';
+import { InvoiceDocDrawer } from '../components/fas/InvoiceDocDrawer';
+import { DrawerFooter } from '../components/fas/DrawerFooter';
 import { PeriodMenu } from '../components/fas/PeriodMenu';
 import { InvoiceSheetTable } from '../components/fas/InvoiceSheetTable';
 import { BillSheetTable } from '../components/fas/BillSheetTable';
@@ -68,6 +75,7 @@ export default function InvoicesPage() {
     syncBills,
     resyncBill,
     markBillsPaid,
+    approveBills,
     deleteBill,
     upsertFeeOverride,
   } = useFas();
@@ -90,6 +98,12 @@ export default function InvoicesPage() {
   const [drawerGroupKey, setDrawerGroupKey] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<null | { type: 'delete' | 'resync'; bill: Bill }>(null);
   const [toast, setToast] = useState<string | null>(null);
+  /** Franchise column open, or folded to a narrow rail (desktop). */
+  const [franchiseColOpen, setFranchiseColOpen] = useState(true);
+  /** Bill waiting on the approval confirmation (layout C). */
+  const [approveBillId, setApproveBillId] = useState<string | null>(null);
+  /** Bills in the bulk approve summary (layout C); null when closed. */
+  const [bulkApproveIds, setBulkApproveIds] = useState<string[] | null>(null);
   const [bulkConfirm, setBulkConfirm] = useState<null | { type: 'process' | 'sync'; ids: string[] }>(null);
   const [createBillIds, setCreateBillIds] = useState<string[] | null>(null);
   const [period, setPeriod] = useState<PeriodKey>('30d');
@@ -175,6 +189,13 @@ export default function InvoicesPage() {
     : undefined;
 
   const drawerBill = drawerBillId ? bills.find((b) => b.id === drawerBillId) : undefined;
+  const approveBill = (approveBillId && bills.find((b) => b.id === approveBillId)) || null;
+  // Prev / Next in the layout C bill review: the franchise's bills, newest bill date first (the register's order).
+  const reviewOrder = useMemo(
+    () => [...franchiseBills].sort((a, b) => b.billDate.localeCompare(a.billDate) || a.id.localeCompare(b.id)).map((b) => b.id),
+    [franchiseBills],
+  );
+  const reviewIndex = drawerBillId ? reviewOrder.indexOf(drawerBillId) : -1;
 
   const invoiceNumberOf = (id: string) => getInvoice(id)?.number ?? id;
   const grossOf = useCallback((id: string) => {
@@ -299,6 +320,7 @@ export default function InvoicesPage() {
     setToast('Marked as paid to the franchise');
   };
   const unpaidSelected = [...billSelectedIds].filter((id) => !bills.find((b) => b.id === id)?.paidOn);
+  const approvableSelected = [...billSelectedIds].filter((id) => !bills.find((b) => b.id === id)?.approvedOn);
 
   const bulkCount =
     tab === 'invoices' ? invoiceSelectedIds.size : tab === 'bills' ? billSelectedIds.size : 0;
@@ -335,7 +357,8 @@ export default function InvoicesPage() {
               flex: 1,
               minHeight: 0,
               display: 'grid',
-              gridTemplateColumns: { xs: '1fr', md: '260px minmax(0, 1fr)' },
+              gridTemplateColumns: { xs: '1fr', md: `${franchiseColOpen ? 260 : 44}px minmax(0, 1fr)` },
+              transition: 'grid-template-columns 220ms cubic-bezier(0.2, 0, 0, 1)',
               gridTemplateRows: { xs: 'minmax(180px, 26vh) 1fr', md: '1fr' },
               overflow: 'hidden',
               bgcolor: colors.paper,
@@ -343,20 +366,69 @@ export default function InvoicesPage() {
           >
             <Box
               sx={{
+                position: 'relative',
                 borderRight: { md: `1px solid ${colors.line}` },
                 borderBottom: { xs: `1px solid ${colors.line}`, md: 'none' },
                 minHeight: 0,
-                overflow: 'hidden',
               }}
             >
-              <FranchiseTilesColumn
-                franchises={franchises}
-                invoices={invoices}
-                bills={bills}
-                selectedId={selectedFranchiseId}
-                onSelect={selectFranchise}
-                variant={variant}
-              />
+              <Box sx={{ height: '100%', overflow: 'hidden' }}>
+                {franchiseColOpen ? (
+                  <FranchiseTilesColumn
+                    franchises={franchises}
+                    invoices={invoices}
+                    bills={bills}
+                    selectedId={selectedFranchiseId}
+                    onSelect={selectFranchise}
+                    variant={variant}
+                  />
+                ) : (
+                  // Collapsed rail: the column title runs down the edge; clicking anywhere reopens it.
+                  <ButtonBase
+                    onClick={() => setFranchiseColOpen(true)}
+                    aria-label="Expand franchises"
+                    sx={{
+                      width: '100%',
+                      height: '100%',
+                      alignItems: 'flex-start',
+                      justifyContent: 'center',
+                      pt: 2.5,
+                      bgcolor: colors.surfaceAlt,
+                      '&:hover': { bgcolor: colors.surface },
+                    }}
+                  >
+                    <Typography sx={{ writingMode: 'vertical-rl', fontSize: 13, fontWeight: 600, color: colors.ink700, whiteSpace: 'nowrap' }}>
+                      Franchises ({franchises.length})
+                    </Typography>
+                  </ButtonBase>
+                )}
+              </Box>
+
+              {/* Edge toggle: white circle, light grey ring, grey |< / >| glyph. */}
+              <ButtonBase
+                onClick={() => setFranchiseColOpen((v) => !v)}
+                aria-label={franchiseColOpen ? 'Collapse franchises' : 'Expand franchises'}
+                aria-expanded={franchiseColOpen}
+                sx={{
+                  display: { xs: 'none', md: 'inline-flex' },
+                  position: 'absolute',
+                  top: '50%',
+                  right: -14,
+                  zIndex: 3,
+                  width: 28,
+                  height: 28,
+                  borderRadius: '50%',
+                  bgcolor: colors.paper,
+                  border: `1px solid ${colors.line}`,
+                  color: colors.ink600,
+                  boxShadow: '0 1px 2px rgba(16, 24, 40, 0.06)',
+                  transform: 'translateY(-50%)',
+                  transition: 'color 150ms ease, border-color 150ms ease',
+                  '&:hover': { color: colors.ink, borderColor: colors.ink400 },
+                }}
+              >
+                {franchiseColOpen ? <FirstPageRounded sx={{ fontSize: 18 }} /> : <LastPageRounded sx={{ fontSize: 18 }} />}
+              </ButtonBase>
             </Box>
 
             <Box
@@ -543,6 +615,7 @@ export default function InvoicesPage() {
                           setDrawerBillId(null);
                           setDrawerInvoiceId(id);
                         }}
+                        onApprove={setApproveBillId}
                         activeId={drawerBillId}
                       />
                     )}
@@ -610,8 +683,20 @@ export default function InvoicesPage() {
         </WorkspaceBody>
       </WorkspaceShell>
 
+      <InvoiceDocDrawer
+        invoice={variant === 'c' ? drawerInvoiceShown ?? undefined : undefined}
+        franchiseName={drawerInvoice ? franchiseName(drawerInvoice.franchiseId) : ''}
+        companyName={drawerInvoice ? companyName(drawerInvoice.companyId) : ''}
+        onClose={() => setDrawerInvoiceId(null)}
+        canProcess={canProcessDrawer}
+        onProcess={() => {
+          if (drawerInvoice) processIds([drawerInvoice.id]);
+        }}
+        onOpenBill={relatedBillForDrawer ? openRelatedBill : undefined}
+      />
+
       <InvoiceDetailDrawer
-        open={!!drawerInvoice}
+        open={variant !== 'c' && !!drawerInvoice}
         onClose={() => setDrawerInvoiceId(null)}
         invoice={drawerInvoiceShown}
         franchiseName={drawerInvoice ? franchiseName(drawerInvoice.franchiseId) : ''}
@@ -639,8 +724,26 @@ export default function InvoicesPage() {
         onMarkPaid={markPaid}
       />
 
+      <BillReviewDrawer
+        bill={variant === 'c' ? drawerBill : undefined}
+        displayId={drawerBill ? billNumber(drawerBill, invoiceNumberOf, 'compact') : ''}
+        onClose={() => setDrawerBillId(null)}
+        franchiseName={franchiseName}
+        companyName={companyName}
+        getInvoice={getInvoiceShown}
+        onOpenInvoice={(id) => {
+          setDrawerBillId(null);
+          setDrawerInvoiceId(id);
+        }}
+        onApprove={(b) => setApproveBillId(b.id)}
+        onDelete={(b) => setConfirm({ type: 'delete', bill: b })}
+        onPrev={reviewIndex > 0 ? () => setDrawerBillId(reviewOrder[reviewIndex - 1]) : undefined}
+        onNext={reviewIndex >= 0 && reviewIndex < reviewOrder.length - 1 ? () => setDrawerBillId(reviewOrder[reviewIndex + 1]) : undefined}
+        position={reviewIndex >= 0 ? `${reviewIndex + 1} of ${reviewOrder.length}` : undefined}
+      />
+
       <BillDetailDrawer
-        bill={drawerBill}
+        bill={variant === 'c' ? undefined : drawerBill}
         displayId={ledger && drawerBill ? billNumber(drawerBill, invoiceNumberOf, variant === 'c' ? 'compact' : 'underscore') : undefined}
         onClose={() => setDrawerBillId(null)}
         franchiseName={franchiseName}
@@ -657,13 +760,45 @@ export default function InvoicesPage() {
         }}
         onResync={(b) => setConfirm({ type: 'resync', bill: b })}
         onDelete={(b) => setConfirm({ type: 'delete', bill: b })}
+        onApprove={variant === 'c' ? (b) => setApproveBillId(b.id) : undefined}
+      />
+
+      <ApproveBillDialog
+        bill={approveBill}
+        displayId={approveBill ? billNumber(approveBill, invoiceNumberOf, 'compact') : ''}
+        franchiseName={franchiseName}
+        invoiceNumber={sheetInvoiceNumber}
+        invoiceCompany={sheetInvoiceCompany}
+        invoiceGross={grossOf}
+        onClose={() => setApproveBillId(null)}
+        onConfirm={(b) => {
+          approveBills([b.id]);
+          setToast(`Bill ${billNumber(b, invoiceNumberOf, 'compact')} approved`);
+        }}
+      />
+
+      <ApproveBillsDialog
+        bills={bulkApproveIds ? bulkApproveIds.map((id) => bills.find((b) => b.id === id)).filter((b): b is NonNullable<typeof b> => !!b) : null}
+        billNumber={(b) => billNumber(b, invoiceNumberOf, 'compact')}
+        franchiseName={franchiseName}
+        companyName={companyName}
+        onClose={() => setBulkApproveIds(null)}
+        onConfirm={(ids) => {
+          approveBills(ids);
+          setBillSelectedIds(new Set());
+          setToast(`${ids.length} ${ids.length === 1 ? 'bill' : 'bills'} approved`);
+        }}
       />
 
       <BulkActionBar
         selectedCount={bulkCount}
-        label={tab === 'bills' ? 'bills selected' : 'invoices selected'}
+        label={`${tab === 'bills' ? 'bill' : 'invoice'}${bulkCount === 1 ? '' : 's'} selected`}
         actions={
-          tab === 'bills' && ledger ? (
+          tab === 'bills' && variant === 'c' ? (
+            <Button variant="contained" disabled={!approvableSelected.length} onClick={() => setBulkApproveIds([...billSelectedIds])}>
+              Approve
+            </Button>
+          ) : tab === 'bills' && ledger ? (
             <Button variant="contained" disabled={!unpaidSelected.length} onClick={() => markPaid(unpaidSelected)}>
               Mark as paid
             </Button>
@@ -784,10 +919,7 @@ export default function InvoicesPage() {
             </Box>
           </Box>
 
-          <Box sx={{ px: 2.5, py: 1.5, borderTop: `1px solid ${colors.line}`, display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
-            <Button variant="outlined" color="secondary" onClick={() => setCreateBillIds(null)}>
-              Cancel
-            </Button>
+          <DrawerFooter onCancel={() => setCreateBillIds(null)}>
             <Button
               variant="contained"
               disabled={!createBillInvoices.length}
@@ -805,7 +937,7 @@ export default function InvoicesPage() {
             >
               Create bill
             </Button>
-          </Box>
+          </DrawerFooter>
         </Box>
       </Drawer>
 

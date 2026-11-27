@@ -16,6 +16,7 @@ import { formatDateShort, formatMoney, round2 } from '../../utils/payable';
 import { billNumberFor, unbilledInstallments, type InvoiceGroup } from '../../utils/ledger';
 import { BillInvoiceItems } from './BillInvoiceItems';
 import { GroupStatusChip } from './BillLedgerTable';
+import { DrawerFooter } from './DrawerFooter';
 import { colors } from '../../theme/tokens';
 
 type Props = {
@@ -31,7 +32,7 @@ type Props = {
 
 function Section({ title, children, last }: { title: string; children: ReactNode; last?: boolean }) {
   return (
-    <Box sx={{ px: 2.5, py: 2, borderBottom: last ? 'none' : `1px solid ${colors.line}` }}>
+    <Box sx={{ px: 3, py: 2.5, borderBottom: last ? 'none' : `1px solid ${colors.line}` }}>
       <Typography
         sx={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: colors.ink600, mb: 1 }}
       >
@@ -105,8 +106,9 @@ export function InvoiceLedgerDrawer({
         <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
           <Box
             sx={{
-              px: 2.5,
-              py: 2,
+              px: 3,
+              pt: 3,
+              pb: 2.5,
               borderBottom: `1px solid ${colors.line}`,
               display: 'flex',
               justifyContent: 'space-between',
@@ -146,7 +148,7 @@ export function InvoiceLedgerDrawer({
                 strong
               />
               <Row label="Billed so far" value={`${formatMoney(g.billed.amount)} of ${formatMoney(g.plan.amount)}`} />
-              {g.planned > 1 && <Row label="Installments" value={`${g.bills.length} of ${g.planned} billed`} />}
+              {g.planned > 1 && <Row label="Bills" value={`${g.bills.length}/${g.planned} billed`} />}
               <Row label="Paid to franchise" value={g.paid && g.paidOn ? `Paid ${formatDateShort(g.paidOn)}` : 'Unpaid'} />
             </Section>
 
@@ -159,7 +161,7 @@ export function InvoiceLedgerDrawer({
               </Box>
             </Section>
 
-            <Section title={g.planned > 1 ? 'Installment schedule' : 'Bill'}>
+            <Section title={g.planned > 1 ? 'Bill schedule' : 'Bill'}>
               <Box sx={{ overflowX: 'auto' }}>
                 <Table size="small">
                   <TableHead>
@@ -242,13 +244,13 @@ export function InvoiceLedgerDrawer({
             </Section>
           </Box>
 
-          {!g.paid && (
-            <Box sx={{ px: 2.5, py: 1.5, borderTop: `1px solid ${colors.line}`, display: 'flex', justifyContent: 'flex-end', flexShrink: 0 }}>
+          <DrawerFooter onCancel={onClose} cancelLabel={g.paid ? 'Close' : 'Cancel'}>
+            {!g.paid && (
               <Button variant="contained" onClick={() => onMarkPaid(g.unpaidIds)}>
                 Mark as paid
               </Button>
-            </Box>
-          )}
+            )}
+          </DrawerFooter>
         </Box>
       )}
     </Drawer>

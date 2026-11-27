@@ -18,13 +18,14 @@ import CloseRounded from '@mui/icons-material/CloseRounded';
 import DeleteOutlineRounded from '@mui/icons-material/DeleteOutlineRounded';
 import EditOutlined from '@mui/icons-material/EditOutlined';
 import { AppShell } from '../components/layout/AppShell';
-import { WorkspaceBody, WorkspaceHeader, WorkspaceShell } from '../components/ui/WorkspaceShell';
+import { WorkspaceBody, WorkspaceShell } from '../components/ui/WorkspaceShell';
 import { AuditLogList, DataTable, type DataColumn } from '../components/fas';
-import { Kpi } from '../components/fas/FranchiseDetailHeader';
+import { filterSelectProps } from '../components/fas/filterSelect';
 import { deleteBtnSx, syncBtnSx } from '../components/fas/rowActions';
+import { DrawerFooter } from '../components/fas/DrawerFooter';
 import { useFas } from '../state/fasStore';
 import type { FeeOverride } from '../types/fas';
-import { colors } from '../theme/tokens';
+import { colors, radius, shadows } from '../theme/tokens';
 
 // Same tab metrics as the Invoices page.
 const tabsSx = {
@@ -36,6 +37,7 @@ const tabsSx = {
     minHeight: 0,
     minWidth: 0,
     px: 1.5,
+    '&:first-of-type': { pl: 0.5 },
     pt: 1.75,
     pb: 1.5,
     fontSize: 14,
@@ -117,23 +119,35 @@ function PctInput({
 
 const textFieldSx = { width: '100%', maxWidth: 360, '& .MuiOutlinedInput-root': { fontSize: 13 } };
 
-/** Footer row with the primary action on the right, like the drawers. */
-function ActionRow({ children, note }: { children: ReactNode; note?: string | null }) {
+type SectionKey = 'overrides' | 'defaults' | 'profile' | 'access' | 'audit';
+
+/** Top tabs group the settings; each tab has its own left-hand section list. */
+const NAV: { label: string; items: { key: SectionKey; label: string; description: string }[] }[] = [
+  {
+    label: 'Fee rules',
+    items: [
+      { key: 'overrides', label: 'Franchise overrides', description: '' },
+      { key: 'defaults', label: 'Brand-wide defaults', description: 'Royalty and territory fee used when a franchise has no override.' },
+    ],
+  },
+  {
+    label: 'Account',
+    items: [
+      { key: 'profile', label: 'Profile', description: 'Shown on audit entries and exported reports.' },
+      { key: 'access', label: 'Access', description: 'Who can view or change fee rules.' },
+    ],
+  },
+  {
+    label: 'Audit log',
+    items: [{ key: 'audit', label: 'Activity', description: 'Every change to fee rules, profile and access.' }],
+  },
+];
+
+function ReadOnlyNote() {
   return (
-    <Box
-      sx={{
-        px: 2.5,
-        py: 1.5,
-        borderTop: `1px solid ${colors.line}`,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'flex-end',
-        gap: 1.5,
-      }}
-    >
-      {note && <Typography sx={{ fontSize: 13, color: colors.ink, fontWeight: 600, mr: 'auto' }}>{note}</Typography>}
-      {children}
-    </Box>
+    <Alert severity="info" sx={{ mb: 1.5 }}>
+      You have read-only access to fee settings. Ask an admin for write access.
+    </Alert>
   );
 }
 
@@ -157,6 +171,8 @@ export default function SettingsPage() {
   } = useFas();
 
   const [tab, setTab] = useState(0);
+  const [section, setSection] = useState<SectionKey>('overrides');
+  const [franchiseFilter, setFranchiseFilter] = useState('');
   const [defaults, setDefaults] = useState(feeDefaults);
   const [profileDraft, setProfileDraft] = useState(profile);
   const [drawer, setDrawer] = useState<OverrideDraft | null>(null);
@@ -224,123 +240,140 @@ export default function SettingsPage() {
         ]),
   ];
 
+  const franchiseOptions = Object.fromEntries([
+    ['', 'All'],
+    ...franchises.filter((f) => overriddenIds.has(f.id)).map((f) => [f.id, f.name]),
+  ]) as Record<string, string>;
+  const visibleOverrides = franchiseFilter ? feeOverrides.filter((o) => o.franchiseId === franchiseFilter) : feeOverrides;
+
+  const group = NAV[tab];
+  const activeItem = group.items.find((i) => i.key === section) ?? group.items[0];
+
   return (
     <AppShell crumbs={[{ label: 'Settings' }]}>
       <WorkspaceShell>
-        <WorkspaceHeader
-          title="Settings"
-          subtitle="Fee rules, profile and access. Keep royalty calculations accurate and accountable."
-        />
-
-        <Box sx={{ px: 2.5, borderBottom: `1px solid ${colors.line}`, flexShrink: 0, bgcolor: colors.paper }}>
-          <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={tabsSx}>
-            <Tab label="Fee rules" disableRipple />
-            <Tab label="Profile" disableRipple />
-            <Tab label="Access" disableRipple />
-            <Tab label="Audit log" disableRipple />
+        <Box sx={{ px: { xs: 2, md: 4 }, borderBottom: `1px solid ${colors.line}`, flexShrink: 0, bgcolor: colors.paper }}>
+          <Tabs
+            value={tab}
+            onChange={(_, v: number) => {
+              setTab(v);
+              setSection(NAV[v].items[0].key);
+            }}
+            variant="scrollable"
+            scrollButtons={false}
+            sx={tabsSx}
+          >
+            {NAV.map((g) => (
+              <Tab key={g.label} label={g.label} disableRipple />
+            ))}
           </Tabs>
         </Box>
 
         <WorkspaceBody>
-          {tab === 0 && (
-            <Box>
-              {/* Stat row — same cells as the Dashboard and franchise header */}
-              <Box sx={{ px: 1, borderBottom: `1px solid ${colors.line}` }}>
-                <Box
-                  sx={{
-                    display: 'grid',
-                    gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', md: 'repeat(4, minmax(0, 1fr))' },
-                    '& > *': { borderLeft: { xs: 'none', md: `1px solid ${colors.line}` }, py: 2, px: 1.5 },
-                    '& > :first-of-type': { borderLeft: 'none' },
-                  }}
-                >
-                  <Kpi
-                    hint="Default royalty"
-                    status="Default royalty"
-                    value={`${feeDefaults.royaltyPct}%`}
-                    caption="brand-wide"
-                  />
-                  <Kpi
-                    hint="Default territory fee"
-                    status="Default territory fee"
-                    value={`${feeDefaults.feePct}%`}
-                    caption="brand-wide"
-                  />
-                  <Kpi
-                    hint="Custom rates"
-                    status="Overrides"
-                    value={String(feeOverrides.length)}
-                    caption={feeOverrides.length === 1 ? 'franchise' : 'franchises'}
-                  />
-                  <Kpi
-                    hint="Default rates"
-                    status="On defaults"
-                    value={String(onDefaults)}
-                    caption={`of ${franchises.length} franchises`}
-                  />
-                </Box>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: 'minmax(0, 1fr)', md: '220px minmax(0, 1fr)' },
+              columnGap: 5,
+              rowGap: 2,
+              px: { xs: 2, md: 4 },
+              py: 3,
+              alignItems: 'start',
+            }}
+          >
+            {/* Section sub-navigation */}
+            <Box
+              component="nav"
+              aria-label={`${group.label} sections`}
+              sx={{
+                display: 'flex',
+                flexDirection: { xs: 'row', md: 'column' },
+                gap: 0.5,
+                overflowX: { xs: 'auto', md: 'visible' },
+                position: { md: 'sticky' },
+                top: { md: 0 },
+              }}
+            >
+              {group.items.map((item) => {
+                const active = item.key === activeItem.key;
+                return (
+                  <Box
+                    key={item.key}
+                    component="button"
+                    type="button"
+                    onClick={() => setSection(item.key)}
+                    aria-current={active ? 'page' : undefined}
+                    sx={{
+                      all: 'unset',
+                      boxSizing: 'border-box',
+                      cursor: 'pointer',
+                      flexShrink: 0,
+                      px: 1.75,
+                      py: 1.1,
+                      borderRadius: `${radius.md}px`,
+                      fontSize: 14,
+                      fontWeight: active ? 600 : 500,
+                      color: active ? colors.green : colors.ink700,
+                      bgcolor: active ? colors.greenSoft : 'transparent',
+                      whiteSpace: 'nowrap',
+                      transition: 'background-color 120ms, color 120ms',
+                      '&:hover': { bgcolor: active ? colors.greenSoft : colors.surface, color: active ? colors.green : colors.ink },
+                      '&:focus-visible': { boxShadow: shadows.focusRing },
+                    }}
+                  >
+                    {item.label}
+                  </Box>
+                );
+              })}
+            </Box>
+
+            {/* Section content */}
+            <Box sx={{ minWidth: 0 }}>
+              <Box sx={{ pb: 2.5, borderBottom: `1px solid ${colors.line}` }}>
+                <Typography component="h2" sx={{ fontSize: 18, fontWeight: 600, letterSpacing: '-0.01em', color: colors.ink }}>
+                  {activeItem.label}
+                </Typography>
+                <Typography sx={{ fontSize: 14, color: colors.ink600, mt: 0.5 }}>
+                  {activeItem.key === 'overrides'
+                    ? `Custom royalty and territory fee rates per franchise. ${onDefaults} of ${franchises.length} franchises use the brand-wide defaults.`
+                    : activeItem.description}
+                </Typography>
               </Box>
 
-              {readOnly && (
-                <Box sx={{ px: 2.5, pt: 2 }}>
-                  <Alert severity="info">
-                    You have read-only access to fee settings. Ask an admin for write access.
-                  </Alert>
-                </Box>
-              )}
-
-              <Section title="Brand-wide defaults" description="Used when a franchise has no override.">
-                <Row label="Royalty">
-                  <PctInput
-                    ariaLabel="Default royalty percent"
-                    value={defaults.royaltyPct}
-                    disabled={readOnly}
-                    onChange={(royaltyPct) => setDefaults((d) => ({ ...d, royaltyPct }))}
-                  />
-                </Row>
-                <Row label="Territory fee">
-                  <PctInput
-                    ariaLabel="Default territory fee percent"
-                    value={defaults.feePct}
-                    disabled={readOnly}
-                    onChange={(feePct) => setDefaults((d) => ({ ...d, feePct }))}
-                  />
-                </Row>
-                {!readOnly && (
-                  <Box sx={{ display: 'flex', gap: 1, mt: 1.5, pl: { sm: '176px' } }}>
-                    <Button
-                      variant="contained"
-                      disabled={!defaultsDirty}
-                      onClick={() => {
-                        setFeeDefaults(defaults);
-                        setToast('Brand-wide defaults saved');
-                      }}
-                    >
-                      Save defaults
-                    </Button>
-                    {defaultsDirty && (
-                      <Button variant="outlined" color="secondary" onClick={() => setDefaults(feeDefaults)}>
-                        Reset
-                      </Button>
-                    )}
-                  </Box>
-                )}
-              </Section>
-
-              <Box sx={{ pt: 1 }}>
-                <DataTable
-                  title="Franchise overrides"
-                  noun={['override', 'overrides']}
-                  columns={overrideColumns}
-                  rows={feeOverrides}
-                  rowKey={(o) => o.id}
-                  exportName="fee-overrides.csv"
-                  emptyText="No overrides yet — every franchise uses the brand-wide defaults."
-                  onRowClick={readOnly ? undefined : (o) => setDrawer({ ...o })}
-                  hideCustomize
-                  toolbarActions={
-                    !readOnly && (
-                      <Tooltip title="Add override">
+              {activeItem.key === 'overrides' && (
+                <Box sx={{ pt: 1 }}>
+                  {readOnly && <ReadOnlyNote />}
+                  <DataTable
+                    noun={['override', 'overrides']}
+                    columns={overrideColumns}
+                    rows={visibleOverrides}
+                    rowKey={(o) => o.id}
+                    exportName="fee-overrides.csv"
+                    emptyText={
+                      franchiseFilter
+                        ? 'No overrides for this franchise.'
+                        : 'No overrides yet — every franchise uses the brand-wide defaults.'
+                    }
+                    onRowClick={readOnly ? undefined : (o) => setDrawer({ ...o })}
+                    hideCustomize
+                    insetX={0}
+                    filters={
+                      <TextField
+                        select
+                        size="small"
+                        value={franchiseFilter}
+                        onChange={(e) => setFranchiseFilter(e.target.value)}
+                        {...filterSelectProps('Franchise', franchiseFilter, franchiseOptions, 220)}
+                      >
+                        {Object.entries(franchiseOptions).map(([v, l]) => (
+                          <MenuItem key={v} value={v}>
+                            {v === '' ? 'All franchises' : l}
+                          </MenuItem>
+                        ))}
+                      </TextField>
+                    }
+                    toolbarActions={
+                      !readOnly && (
                         <Button
                           variant="outlined"
                           color="secondary"
@@ -350,108 +383,143 @@ export default function SettingsPage() {
                         >
                           Add override
                         </Button>
-                      </Tooltip>
-                    )
-                  }
-                />
-              </Box>
-            </Box>
-          )}
-
-          {tab === 1 && (
-            <Box>
-              <Section title="Profile" description="Shown on audit entries and exported reports." last>
-                <Row label="Name">
-                  <TextField
-                    size="small"
-                    value={profileDraft.name}
-                    onChange={(e) => setProfileDraft((p) => ({ ...p, name: e.target.value }))}
-                    slotProps={{ htmlInput: { 'aria-label': 'Name' } }}
-                    sx={textFieldSx}
+                      )
+                    }
                   />
-                </Row>
-                <Row label="Email">
-                  <TextField
-                    size="small"
-                    value={profileDraft.email}
-                    onChange={(e) => setProfileDraft((p) => ({ ...p, email: e.target.value }))}
-                    slotProps={{ htmlInput: { 'aria-label': 'Email' } }}
-                    sx={textFieldSx}
-                  />
-                </Row>
-                <Row label="Role" hint="Set by your organization.">
-                  <Typography sx={{ fontSize: 13, color: colors.ink, fontWeight: 500 }}>{profileDraft.role}</Typography>
-                </Row>
-              </Section>
-              <ActionRow>
-                {profileDirty && (
-                  <Button variant="outlined" color="secondary" onClick={() => setProfileDraft(profile)}>
-                    Cancel
-                  </Button>
-                )}
-                <Button
-                  variant="contained"
-                  disabled={!profileDirty}
-                  onClick={() => {
-                    setProfile(profileDraft);
-                    setToast('Profile saved');
-                  }}
-                >
-                  Save profile
-                </Button>
-              </ActionRow>
-            </Box>
-          )}
-
-          {tab === 2 && (
-            <Box>
-              {!isAdmin && (
-                <Box sx={{ px: 2.5, pt: 2 }}>
-                  <Alert severity="warning">
-                    Only admins can change access levels. Turn on Admin below to simulate admin privileges in this
-                    prototype.
-                  </Alert>
                 </Box>
               )}
-              <Section title="Access control" last>
-                <Row label="Admin" hint="Prototype toggle.">
-                  <Tooltip title={isAdmin ? 'Turn off admin' : 'Turn on admin'}>
-                    <Switch
-                      checked={isAdmin}
-                      onChange={(_, v) => setIsAdmin(v)}
-                      slotProps={{ input: { 'aria-label': 'I am an admin' } }}
-                    />
-                  </Tooltip>
-                </Row>
-                <Row
-                  label="Fee settings access"
-                  hint="Read-only users can view fee rules but cannot change defaults or overrides."
-                >
-                  <TextField
-                    select
-                    size="small"
-                    value={settingsAccess}
-                    disabled={!isAdmin}
-                    onChange={(e) => {
-                      setSettingsAccess(e.target.value as 'read' | 'write');
-                      setToast('Access updated');
-                    }}
-                    slotProps={{ htmlInput: { 'aria-label': 'Fee settings access' } }}
-                    sx={{ width: 200, '& .MuiOutlinedInput-root': { fontSize: 13 } }}
-                  >
-                    <MenuItem value="write">Write</MenuItem>
-                    <MenuItem value="read">Read-only</MenuItem>
-                  </TextField>
-                </Row>
-              </Section>
-            </Box>
-          )}
 
-          {tab === 3 && (
-            <Box sx={{ px: 2.5 }}>
-              <AuditLogList entries={audit} />
+              {activeItem.key === 'defaults' && (
+                <Box sx={{ pt: 2 }}>
+                  {readOnly && <ReadOnlyNote />}
+                  <Row label="Royalty">
+                    <PctInput
+                      ariaLabel="Default royalty percent"
+                      value={defaults.royaltyPct}
+                      disabled={readOnly}
+                      onChange={(royaltyPct) => setDefaults((d) => ({ ...d, royaltyPct }))}
+                    />
+                  </Row>
+                  <Row label="Territory fee">
+                    <PctInput
+                      ariaLabel="Default territory fee percent"
+                      value={defaults.feePct}
+                      disabled={readOnly}
+                      onChange={(feePct) => setDefaults((d) => ({ ...d, feePct }))}
+                    />
+                  </Row>
+                  {!readOnly && (
+                    <Box sx={{ display: 'flex', gap: 1, mt: 2, pl: { sm: '176px' } }}>
+                      <Button
+                        variant="contained"
+                        disabled={!defaultsDirty}
+                        onClick={() => {
+                          setFeeDefaults(defaults);
+                          setToast('Brand-wide defaults saved');
+                        }}
+                      >
+                        Save defaults
+                      </Button>
+                      {defaultsDirty && (
+                        <Button variant="outlined" color="secondary" onClick={() => setDefaults(feeDefaults)}>
+                          Reset
+                        </Button>
+                      )}
+                    </Box>
+                  )}
+                </Box>
+              )}
+
+              {activeItem.key === 'profile' && (
+                <Box sx={{ pt: 2 }}>
+                  <Row label="Name">
+                    <TextField
+                      size="small"
+                      value={profileDraft.name}
+                      onChange={(e) => setProfileDraft((p) => ({ ...p, name: e.target.value }))}
+                      slotProps={{ htmlInput: { 'aria-label': 'Name' } }}
+                      sx={textFieldSx}
+                    />
+                  </Row>
+                  <Row label="Email">
+                    <TextField
+                      size="small"
+                      value={profileDraft.email}
+                      onChange={(e) => setProfileDraft((p) => ({ ...p, email: e.target.value }))}
+                      slotProps={{ htmlInput: { 'aria-label': 'Email' } }}
+                      sx={textFieldSx}
+                    />
+                  </Row>
+                  <Row label="Role" hint="Set by your organization.">
+                    <Typography sx={{ fontSize: 13, color: colors.ink, fontWeight: 500 }}>{profileDraft.role}</Typography>
+                  </Row>
+                  <Box sx={{ display: 'flex', gap: 1, mt: 2, pl: { sm: '176px' } }}>
+                    <Button
+                      variant="contained"
+                      disabled={!profileDirty}
+                      onClick={() => {
+                        setProfile(profileDraft);
+                        setToast('Profile saved');
+                      }}
+                    >
+                      Save profile
+                    </Button>
+                    {profileDirty && (
+                      <Button variant="outlined" color="secondary" onClick={() => setProfileDraft(profile)}>
+                        Cancel
+                      </Button>
+                    )}
+                  </Box>
+                </Box>
+              )}
+
+              {activeItem.key === 'access' && (
+                <Box sx={{ pt: 2 }}>
+                  {!isAdmin && (
+                    <Alert severity="warning" sx={{ mb: 2 }}>
+                      Only admins can change access levels. Turn on Admin below to simulate admin privileges in this
+                      prototype.
+                    </Alert>
+                  )}
+                  <Row label="Admin" hint="Prototype toggle.">
+                    <Tooltip title={isAdmin ? 'Turn off admin' : 'Turn on admin'}>
+                      <Switch
+                        checked={isAdmin}
+                        onChange={(_, v) => setIsAdmin(v)}
+                        slotProps={{ input: { 'aria-label': 'I am an admin' } }}
+                      />
+                    </Tooltip>
+                  </Row>
+                  <Row
+                    label="Fee settings access"
+                    hint="Read-only users can view fee rules but cannot change defaults or overrides."
+                  >
+                    <TextField
+                      select
+                      size="small"
+                      value={settingsAccess}
+                      disabled={!isAdmin}
+                      onChange={(e) => {
+                        setSettingsAccess(e.target.value as 'read' | 'write');
+                        setToast('Access updated');
+                      }}
+                      slotProps={{ htmlInput: { 'aria-label': 'Fee settings access' } }}
+                      sx={{ width: 200, '& .MuiOutlinedInput-root': { fontSize: 13 } }}
+                    >
+                      <MenuItem value="write">Write</MenuItem>
+                      <MenuItem value="read">Read-only</MenuItem>
+                    </TextField>
+                  </Row>
+                </Box>
+              )}
+
+              {activeItem.key === 'audit' && (
+                <Box sx={{ pt: 1 }}>
+                  <AuditLogList entries={audit} />
+                </Box>
+              )}
             </Box>
-          )}
+          </Box>
         </WorkspaceBody>
       </WorkspaceShell>
 
@@ -547,10 +615,7 @@ export default function SettingsPage() {
               </Section>
             </Box>
 
-            <ActionRow>
-              <Button variant="outlined" color="secondary" onClick={() => setDrawer(null)}>
-                Cancel
-              </Button>
+            <DrawerFooter onCancel={() => setDrawer(null)}>
               <Button
                 variant="contained"
                 disabled={!drawer.franchiseId}
@@ -562,7 +627,7 @@ export default function SettingsPage() {
               >
                 {drawer.id ? 'Save override' : 'Add override'}
               </Button>
-            </ActionRow>
+            </DrawerFooter>
           </Box>
         )}
       </Drawer>

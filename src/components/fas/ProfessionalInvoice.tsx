@@ -8,6 +8,7 @@ import Typography from '@mui/material/Typography';
 import type { Invoice, PayableBreakdown } from '../../types/fas';
 import { StatusChip } from '../ui/StatusChip';
 import { formatDate, formatMoney } from '../../utils/payable';
+import { DrawerFooter } from './DrawerFooter';
 import { colors } from '../../theme/tokens';
 
 type Props = {
@@ -45,7 +46,7 @@ function Row({ label, value, muted }: { label: string; value: ReactNode; muted?:
 
 function Section({ title, children, last }: { title: string; children: ReactNode; last?: boolean }) {
   return (
-    <Box sx={{ px: 2.5, py: 2, borderBottom: last ? 'none' : `1px solid ${colors.line}` }}>
+    <Box sx={{ px: 3, py: 2.5, borderBottom: last ? 'none' : `1px solid ${colors.line}` }}>
       <Typography
         sx={{
           fontSize: 11,
@@ -110,7 +111,7 @@ export function ProfessionalInvoice({
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <Box sx={{ px: 2.5, pt: 2, pb: 2, borderBottom: `1px solid ${colors.line}`, flexShrink: 0 }}>
+      <Box sx={{ px: 3, pt: 3, pb: 2.5, borderBottom: `1px solid ${colors.line}`, flexShrink: 0 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, alignItems: 'flex-start' }}>
           <Box sx={{ minWidth: 0, pr: 2 }}>
             <Typography sx={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.02em', lineHeight: 1.2 }}>
@@ -146,7 +147,7 @@ export function ProfessionalInvoice({
       </Box>
 
       <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
-        {notice && <Box sx={{ px: 2.5, pt: 2 }}>{notice}</Box>}
+        {notice && <Box sx={{ px: 3, pt: 2.5 }}>{notice}</Box>}
 
         <Section title="Invoice summary">
           <Row label="Invoice date" value={formatDate(invoice.invoiceDate)} />
@@ -214,17 +215,7 @@ export function ProfessionalInvoice({
         </Section>
       </Box>
 
-      <Box
-        sx={{
-          px: 2.5,
-          py: 1.5,
-          borderTop: `1px solid ${colors.line}`,
-          display: 'flex',
-          justifyContent: 'flex-end',
-          bgcolor: colors.paper,
-          flexShrink: 0,
-        }}
-      >
+      <DrawerFooter onCancel={onClose}>
         <Tooltip
           title={
             canProcess
@@ -240,7 +231,7 @@ export function ProfessionalInvoice({
             </Button>
           </span>
         </Tooltip>
-      </Box>
+      </DrawerFooter>
     </Box>
   );
 }

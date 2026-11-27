@@ -118,7 +118,7 @@ export function InvoiceSheetTable({
           r.planned > r.bills ? (
             <Box component="span">
               {r.bills}
-              <Box component="span" sx={{ color: colors.ink500 }}>{` of ${r.planned}`}</Box>
+              <Box component="span" sx={{ color: colors.ink500 }}>{`/${r.planned}`}</Box>
             </Box>
           ) : (
             r.bills || <Box component="span" sx={{ color: colors.ink500 }}>0</Box>

@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import Box from '@mui/material/Box';
 import ButtonBase from '@mui/material/ButtonBase';
+import Button from '@mui/material/Button';
+import Tooltip from '@mui/material/Tooltip';
 import type { Bill } from '../../types/fas';
 import { StatusChip } from '../ui/StatusChip';
 import { formatDateShort, round2 } from '../../utils/payable';
@@ -22,6 +24,8 @@ type Line = {
   customer: string;
   kind: string;
   type: BillType;
+  /** Bills raised against this line's invoice. */
+  billCount: number;
   /** This invoice's slice of the bill (1 for a single-invoice bill). */
   share: number;
   gross: number;
@@ -37,7 +41,7 @@ type Line = {
 
 type BillType = 'installment' | 'combined' | 'single';
 type View = 'bill' | 'invoice';
-const TYPE_LABEL: Record<BillType, string> = { installment: 'Installments', combined: 'Combined', single: 'Single' };
+const TYPE_LABEL: Record<BillType, string> = { installment: 'Split bills', combined: 'Combined', single: 'Single' };
 
 type Props = {
   bills: Bill[];
@@ -51,6 +55,8 @@ type Props = {
   onRowClick: (billId: string) => void;
   /** Opens the invoice side panel from an invoice link. */
   onOpenInvoice: (invoiceId: string) => void;
+  /** Asks to approve a bill (the page confirms first). */
+  onApprove: (billId: string) => void;
   activeId?: string | null;
 };
 
@@ -108,6 +114,7 @@ export function BillSheetTable({
   onToggleSelectAll,
   onRowClick,
   onOpenInvoice,
+  onApprove,
   activeId,
 }: Props) {
   const [search, setSearch] = useState('');
@@ -118,12 +125,14 @@ export function BillSheetTable({
 
   const lines = useMemo<Line[]>(() => {
     const out: Line[] = [];
+    const billsPerInvoice = new Map<string, number>();
+    for (const bill of bills) for (const id of billInvoiceIds(bill)) billsPerInvoice.set(id, (billsPerInvoice.get(id) ?? 0) + 1);
     for (const bill of bills) {
       const ids = billInvoiceIds(bill);
       const grossSum = ids.reduce((s, id) => s + invoiceGross(id), 0);
       const type: BillType = bill.installment ? 'installment' : ids.length > 1 ? 'combined' : 'single';
       const kind = bill.installment
-        ? `Installment ${bill.installment.index} of ${bill.installment.count}`
+        ? `Bill ${bill.installment.index}/${bill.installment.count}`
         : ids.length > 1
           ? `Combined · ${ids.length} invoices`
           : 'Single';
@@ -138,6 +147,7 @@ export function BillSheetTable({
           customer: invoiceCompany(invoiceId),
           kind,
           type,
+          billCount: billsPerInvoice.get(invoiceId) ?? 0,
           share,
           gross: round2(bill.gross * share),
           payment: round2(bill.amount * share),
@@ -185,21 +195,22 @@ export function BillSheetTable({
       view === 'bill' && {
         id: 'invoice',
         label: 'Invoice #',
+        weight: 500,
+        color: colors.gray900,
         value: (l) => l.invoiceNo,
         render: (l) => (
-          <CellLink label={`Open invoice ${l.invoiceNo}`} onClick={() => onOpenInvoice(l.invoiceId)}>
+          <CellLink color={colors.gray900} label={`Open invoice ${l.invoiceNo}`} onClick={() => onOpenInvoice(l.invoiceId)}>
             {l.invoiceNo}
           </CellLink>
         ),
       },
       // By invoice, the bill date leads the scrolling columns instead of being frozen.
-      view === 'invoice' && { id: 'billDate', label: 'Bill date', value: (l) => formatDateShort(l.bill.billDate) },
+      view === 'invoice' && { id: 'billDate', label: 'Bill date', weight: 400, color: colors.gray500, value: (l) => formatDateShort(l.bill.billDate) },
       { id: 'customer', label: 'Customer', value: (l) => l.customer },
-      { id: 'kind', label: 'Bill type', value: (l) => l.kind },
+      { id: 'bills', label: 'Bills', value: (l) => l.billCount },
       { id: 'period', label: 'Period', value: (l) => periodLabel(l.bill.billDate) },
       { id: 'week', label: 'Week ending', defaultVisible: false, value: (l) => weekEnding(l.bill.billDate) },
       { id: 'gross', label: 'Gross', money: true, value: (l) => l.gross },
-      { id: 'payment', label: 'Payment', money: true, strong: true, value: (l) => l.payment },
       has('royaltyPct') && { id: 'royalty', label: rateLabel('Royalty', pcts('royaltyPct')), money: true, value: (l) => l.royalty },
       has('feePct') && { id: 'territory', label: rateLabel('Territory', pcts('feePct')), money: true, value: (l) => l.territory },
       has('serviceFeePct') && { id: 'service', label: rateLabel('Service fee', pcts('serviceFeePct')), money: true, value: (l) => l.service },
@@ -215,14 +226,51 @@ export function BillSheetTable({
       { id: 'paidOn', label: 'Paid on', value: (l) => (l.bill.paidOn ? formatDateShort(l.bill.paidOn) : undefined) },
       { id: 'invoiceDate', label: 'Invoice date', defaultVisible: false, value: (l) => formatDateShort(l.bill.invoiceDate) },
       { id: 'due', label: 'Pay date', defaultVisible: false, value: (l) => (l.bill.payDate ? formatDateShort(l.bill.payDate) : undefined) },
+      // Payable sits just left of Approve, so the amount being approved reads next to the action.
+      { id: 'payment', label: 'Payable', money: true, strong: true, value: (l) => l.payment },
+      {
+        id: 'approve',
+        label: 'Action',
+        width: 110,
+        value: (l) => (l.bill.approvedOn ? 'Approved' : 'Not approved'),
+        // One tick per bill: a combined bill's later lines (by bill) stay blank.
+        render: (l) => {
+          if (view === 'bill' && l.cont) return null;
+          const done = !!l.bill.approvedOn;
+          if (done)
+            return (
+              <Tooltip title={`Approved ${formatDateShort(l.bill.approvedOn!)}`}>
+                <span aria-label={`Bill ${l.billNo} approved`}>
+                  <StatusChip tone="success" label="Approved" />
+                </span>
+              </Tooltip>
+            );
+          return (
+            <Button
+              variant="outlined"
+              size="small"
+              aria-label={`Approve bill ${l.billNo}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onApprove(l.bill.id);
+              }}
+              sx={{ height: 30, minWidth: 0, px: 1.5, fontSize: 13, fontWeight: 600, textTransform: 'none', whiteSpace: 'nowrap' }}
+            >
+              Approve
+            </Button>
+          );
+        },
+      },
     ];
     return cols.filter((c): c is SheetColumn<Line> => !!c);
-  }, [lines, invoiceRates, view]);
+  }, [lines, invoiceRates, view, onApprove]);
 
   const billDateCol: SheetColumn<Line> = {
     id: 'date',
     label: 'Bill date',
     width: 110,
+    weight: 400,
+    color: colors.gray500,
     value: (l) => formatDateShort(l.bill.billDate),
   };
   const billCol: SheetColumn<Line> = {
@@ -231,23 +279,28 @@ export function BillSheetTable({
     width: 170,
     strong: true,
     value: (l) => l.billNo,
-    render: (l) => (
-      <CellLink muted={view === 'bill' && l.cont} label={`Open bill ${l.billNo}`} onClick={() => onRowClick(l.bill.id)}>
-        {l.billNo}
-      </CellLink>
-    ),
+    // By bill, a bill's later lines leave the number blank: it shows once, on the group's first line.
+    render: (l) =>
+      view === 'bill' && l.cont ? null : (
+        <CellLink pill label={`Open bill ${l.billNo}`} onClick={() => onRowClick(l.bill.id)}>
+          {l.billNo}
+        </CellLink>
+      ),
   };
   const invoiceCol: SheetColumn<Line> = {
     id: 'invoiceKey',
     label: 'Invoice #',
     width: 150,
-    strong: true,
+    weight: 500,
+    color: colors.gray900,
     value: (l) => l.invoiceNo,
-    render: (l) => (
-      <CellLink muted={l.cont} label={`Open invoice ${l.invoiceNo}`} onClick={() => onOpenInvoice(l.invoiceId)}>
-        {l.invoiceNo}
-      </CellLink>
-    ),
+    // By invoice, an invoice's later bills leave the number blank.
+    render: (l) =>
+      l.cont ? null : (
+        <CellLink color={colors.gray900} label={`Open invoice ${l.invoiceNo}`} onClick={() => onOpenInvoice(l.invoiceId)}>
+          {l.invoiceNo}
+        </CellLink>
+      ),
   };
   // The grouping key leads the frozen columns.
   const pinned: SheetColumn<Line>[] = view === 'bill' ? [billDateCol, billCol] : [invoiceCol, billCol];

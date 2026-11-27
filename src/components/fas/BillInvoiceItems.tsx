@@ -118,7 +118,7 @@ export function BillInvoiceItems({
               </TableCell>
             </TableRow>
           ))}
-          <TableRow sx={{ '& td': { borderBottom: 'none', fontWeight: 700, color: colors.ink, pt: 1.5 } }}>
+          <TableRow sx={{ '& td': { borderBottom: 'none', fontWeight: 700, color: colors.ink, py: 1.5, bgcolor: colors.totalFill } }}>
             <TableCell sx={cellSx} colSpan={3}>
               <Typography sx={{ fontSize: 13, fontWeight: 700 }}>
                 Total

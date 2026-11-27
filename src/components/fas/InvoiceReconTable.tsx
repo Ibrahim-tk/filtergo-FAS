@@ -44,7 +44,7 @@ type ReconState = 'toBill' | 'partial' | 'unpaid' | 'billed';
 
 const STATE_META: Record<ReconState, { label: string; tone: StatusTone; hint: string }> = {
   toBill: { label: 'To bill', tone: 'warning', hint: 'No bill yet' },
-  partial: { label: 'Partly billed', tone: 'info', hint: 'Installments still to bill' },
+  partial: { label: 'Partly billed', tone: 'info', hint: 'Bills still to raise' },
   unpaid: { label: 'Awaiting payment', tone: 'neutral', hint: 'Customer unpaid' },
   billed: { label: 'Billed', tone: 'success', hint: 'Fully billed' },
 };

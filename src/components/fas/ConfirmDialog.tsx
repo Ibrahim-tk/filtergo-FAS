@@ -5,6 +5,7 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogContentText from '@mui/material/DialogContentText';
 import DialogTitle from '@mui/material/DialogTitle';
 import type { ReactNode } from 'react';
+import { actionBtnSx, cancelBtnSx } from './DrawerFooter';
 
 type Props = {
   open: boolean;
@@ -36,12 +37,13 @@ export function ConfirmDialog({
         </DialogContent>
       )}
       <DialogActions>
-        <Button variant="outlined" color="inherit" onClick={onClose}>
+        <Button variant="outlined" color="secondary" onClick={onClose} sx={{ ...actionBtnSx, ...cancelBtnSx }}>
           {cancelLabel}
         </Button>
         <Button
           variant="contained"
           color={destructive ? 'error' : 'primary'}
+          sx={actionBtnSx}
           onClick={() => {
             onConfirm();
             onClose();

@@ -51,6 +51,8 @@ type FasActions = {
   resyncBill: (billId: string) => void;
   /** Records that the franchise has been paid for these bills (set per invoice, never per bill). */
   markBillsPaid: (billIds: string[]) => void;
+  /** Approves bills for payout; already-approved bills keep their date. */
+  approveBills: (billIds: string[]) => void;
   deleteBill: (billId: string) => void;
   setFeeDefaults: (next: FeeDefaults) => void;
   upsertFeeOverride: (override: Omit<FeeOverride, 'id'> & { id?: string }) => void;
@@ -505,6 +507,12 @@ export function FasProvider({ children }: { children: ReactNode }) {
     setBills((prev) => prev.map((b) => (ids.has(b.id) && !b.paidOn ? { ...b, paidOn: today } : b)));
   }, []);
 
+  const approveBills = useCallback((billIds: string[]) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const ids = new Set(billIds);
+    setBills((prev) => prev.map((b) => (ids.has(b.id) && !b.approvedOn ? { ...b, approvedOn: today } : b)));
+  }, []);
+
   const deleteBill = useCallback(
     (billId: string) => {
       const bill = bills.find((b) => b.id === billId);
@@ -593,6 +601,7 @@ export function FasProvider({ children }: { children: ReactNode }) {
       syncBills,
       resyncBill,
       markBillsPaid,
+      approveBills,
       deleteBill,
       setFeeDefaults,
       upsertFeeOverride,
@@ -616,6 +625,7 @@ export function FasProvider({ children }: { children: ReactNode }) {
       settingsAccess,
       isAdmin,
       markBillsPaid,
+      approveBills,
       processInvoices,
       processInvoicesCombined,
       syncBills,

@@ -69,6 +69,8 @@ export type Bill = {
   payDate?: string;
   /** Date the franchise was paid for this bill (marked per invoice, so every bill of an invoice shares it). */
   paidOn?: string;
+  /** Date the bill was approved for payout (layout C). */
+  approvedOn?: string;
   /** Set when the invoice is paid out over several bills (installment plan). */
   installment?: BillInstallment;
 };
